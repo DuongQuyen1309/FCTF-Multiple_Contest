@@ -31,8 +31,6 @@ public partial class User
 
     public bool? Verified { get; set; }
 
-    public int? TeamId { get; set; }
-
     public DateTime? Created { get; set; }
 
     public string? Language { get; set; }
@@ -42,8 +40,6 @@ public partial class User
     // --- Navigation properties ---
 
     public virtual Bracket? Bracket { get; set; }
-
-    public virtual Team? Team { get; set; }
 
     public virtual ICollection<Team> Teams { get; set; } = new List<Team>();
 

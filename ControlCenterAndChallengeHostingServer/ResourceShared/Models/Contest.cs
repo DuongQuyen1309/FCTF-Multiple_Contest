@@ -58,4 +58,8 @@ public partial class Contest
     public virtual ICollection<Unlock> Unlocks { get; set; } = new List<Unlock>();
 
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+
+    public virtual ICollection<Team> Teams { get; set; } = new List<Team>();
+
+    public virtual ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
 }

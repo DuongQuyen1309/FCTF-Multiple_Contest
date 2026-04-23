@@ -893,6 +893,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Website)
                 .HasMaxLength(128)
                 .HasColumnName("website");
+            entity.Property(e => e.ContestId)
+                .HasColumnType("int(11)")
+                .HasColumnName("contest_id");
+
+            entity.HasIndex(e => e.ContestId, "ix_teams_contest_id");
 
             entity.HasOne(d => d.Bracket).WithMany(p => p.Teams)
                 .HasForeignKey(d => d.BracketId)
@@ -903,6 +908,11 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.CaptainId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("team_captain_id");
+
+            entity.HasOne(d => d.Contest).WithMany(p => p.Teams)
+                .HasForeignKey(d => d.ContestId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_teams_contest_id");
         });
 
         modelBuilder.Entity<Ticket>(entity =>
@@ -912,12 +922,15 @@ public partial class AppDbContext : DbContext
             entity.ToTable("tickets");
 
             entity.HasIndex(e => e.AuthorId, "author_id");
-
             entity.HasIndex(e => e.ReplierId, "replier_id");
+            entity.HasIndex(e => e.ContestId, "ix_tickets_contest_id");
 
             entity.Property(e => e.Id)
                 .HasColumnType("int(11)")
                 .HasColumnName("id");
+            entity.Property(e => e.ContestId)
+                .HasColumnType("int(11)")
+                .HasColumnName("contest_id");
             entity.Property(e => e.AuthorId)
                 .HasColumnType("int(11)")
                 .HasColumnName("author_id");
@@ -942,6 +955,11 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Type)
                 .HasMaxLength(80)
                 .HasColumnName("type");
+
+            entity.HasOne(d => d.Contest).WithMany(p => p.Tickets)
+                .HasForeignKey(d => d.ContestId)
+                .OnDelete(DeleteBehavior.SetNull)
+                .HasConstraintName("fk_tickets_contest_id");
 
             entity.HasOne(d => d.Author).WithMany(p => p.TicketAuthors)
                 .HasForeignKey(d => d.AuthorId)
@@ -1080,8 +1098,6 @@ public partial class AppDbContext : DbContext
 
             entity.HasIndex(e => e.BracketId, "fk_users_bracket_id");
 
-            entity.HasIndex(e => e.TeamId, "fk_users_team_id");
-
             entity.HasIndex(e => new { e.Id, e.OauthId }, "id").IsUnique();
 
             entity.HasIndex(e => e.OauthId, "oauth_id").IsUnique();
@@ -1121,9 +1137,6 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Secret)
                 .HasMaxLength(128)
                 .HasColumnName("secret");
-            entity.Property(e => e.TeamId)
-                .HasColumnType("int(11)")
-                .HasColumnName("team_id");
             entity.Property(e => e.Type)
                 .HasMaxLength(80)
                 .HasColumnName("type");
@@ -1136,11 +1149,6 @@ public partial class AppDbContext : DbContext
                 .HasForeignKey(d => d.BracketId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_users_bracket_id");
-
-            entity.HasOne(d => d.Team).WithMany(p => p.Users)
-                .HasForeignKey(d => d.TeamId)
-                .OnDelete(DeleteBehavior.SetNull)
-                .HasConstraintName("fk_users_team_id");
         });
 
         OnModelCreatingPartial(modelBuilder);

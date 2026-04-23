@@ -476,12 +476,92 @@ def upgrade():
             sa.Column("contest_id", sa.Integer(),
                       sa.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True))
 
+    # ===================================================================
+    # PHẦN 7 — THÊM contest_id vào teams
+    # ===================================================================
+    if _has_table(bind, "teams") and not _has_column(bind, "teams", "contest_id"):
+        op.add_column("teams",
+            sa.Column("contest_id", sa.Integer(),
+                      sa.ForeignKey("contests.id", ondelete="SET NULL"),
+                      nullable=True))
+        op.create_index("ix_teams_contest_id", "teams", ["contest_id"])
+
+    # ===================================================================
+    # PHẦN 8 — THÊM contest_id vào tickets
+    # ===================================================================
+    if _has_table(bind, "tickets") and not _has_column(bind, "tickets", "contest_id"):
+        op.add_column("tickets",
+            sa.Column("contest_id", sa.Integer(),
+                      sa.ForeignKey("contests.id", ondelete="SET NULL"),
+                      nullable=True))
+        op.create_index("ix_tickets_contest_id", "tickets", ["contest_id"])
+
+    # ===================================================================
+    # PHẦN 9 — XÓA team_id khỏi users
+    # Membership của user trong team được quản lý qua contest_participants.team_id
+    # ===================================================================
+    if _has_table(bind, "users") and _has_column(bind, "users", "team_id"):
+        _drop_col_with_fk(bind, "users", "team_id")
+
+    # ===================================================================
+    # PHẦN 10 — ĐẢM BẢO challenge_start_tracking có contest_id
+    # Phòng trường hợp bảng tạo từ schema cũ thiếu cột này
+    # ===================================================================
+    if _has_table(bind, "challenge_start_tracking") and \
+       not _has_column(bind, "challenge_start_tracking", "contest_id"):
+        op.add_column("challenge_start_tracking",
+            sa.Column("contest_id", sa.Integer(),
+                      sa.ForeignKey("contests.id", ondelete="CASCADE"),
+                      nullable=True))
+        op.create_index("ix_cst_contest_id", "challenge_start_tracking", ["contest_id"])
+
 
 # ===========================================================================
 # DOWNGRADE — hoàn tác theo thứ tự ngược
 # ===========================================================================
 def downgrade():
     bind = op.get_bind()
+
+    # -------------------------------------------------------------------
+    # 10. challenge_start_tracking.contest_id
+    # -------------------------------------------------------------------
+    if _has_table(bind, "challenge_start_tracking") and \
+       _has_column(bind, "challenge_start_tracking", "contest_id"):
+        try:
+            op.drop_index("ix_cst_contest_id", table_name="challenge_start_tracking")
+        except Exception:
+            pass
+        _drop_col_with_fk(bind, "challenge_start_tracking", "contest_id")
+
+    # -------------------------------------------------------------------
+    # 9. Khôi phục team_id vào users
+    # -------------------------------------------------------------------
+    if _has_table(bind, "users") and not _has_column(bind, "users", "team_id"):
+        op.add_column("users",
+            sa.Column("team_id", sa.Integer(),
+                      sa.ForeignKey("teams.id", ondelete="SET NULL",
+                                    use_alter=True, name="fk_users_team_id"),
+                      nullable=True))
+
+    # -------------------------------------------------------------------
+    # 8. Drop contest_id khỏi tickets
+    # -------------------------------------------------------------------
+    if _has_table(bind, "tickets") and _has_column(bind, "tickets", "contest_id"):
+        try:
+            op.drop_index("ix_tickets_contest_id", table_name="tickets")
+        except Exception:
+            pass
+        _drop_col_with_fk(bind, "tickets", "contest_id")
+
+    # -------------------------------------------------------------------
+    # 7. Drop contest_id khỏi teams
+    # -------------------------------------------------------------------
+    if _has_table(bind, "teams") and _has_column(bind, "teams", "contest_id"):
+        try:
+            op.drop_index("ix_teams_contest_id", table_name="teams")
+        except Exception:
+            pass
+        _drop_col_with_fk(bind, "teams", "contest_id")
 
     # -------------------------------------------------------------------
     # 6. notifications

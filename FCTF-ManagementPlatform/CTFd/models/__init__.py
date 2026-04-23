@@ -942,13 +942,6 @@ class Users(db.Model):
     verified = db.Column(db.Boolean, default=False)
     language = db.Column(db.String(32), nullable=True, default=None)
 
-    team_id = db.Column(
-        db.Integer,
-        db.ForeignKey("teams.id", ondelete="SET NULL",
-                      use_alter=True, name="fk_users_team_id"),
-        nullable=True,
-    )
-
     field_entries = db.relationship(
         "UserFieldEntries",
         foreign_keys="UserFieldEntries.user_id",
@@ -970,18 +963,10 @@ class Users(db.Model):
 
     @hybrid_property
     def account_id(self):
-        from CTFd.utils import get_config
-        user_mode = get_config("user_mode")
-        if user_mode == "teams":
-            return self.team_id
         return self.id
 
     @hybrid_property
     def account(self):
-        from CTFd.utils import get_config
-        user_mode = get_config("user_mode")
-        if user_mode == "teams":
-            return self.team
         return self
 
     @property
@@ -1133,9 +1118,10 @@ class Teams(db.Model):
     password = db.Column(db.String(128))
     secret   = db.Column(db.String(128))
 
-    members = db.relationship(
-        "Users", backref="team", foreign_keys="Users.team_id", lazy="joined"
+    contest_id = db.Column(
+        db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True
     )
+    contest = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
 
     website     = db.Column(db.String(128))
     affiliation = db.Column(db.String(128))
@@ -1254,9 +1240,15 @@ class Teams(db.Model):
             raise TeamTokenInvalidException
         return team
 
+    def _get_member_ids(self, contest_id=None):
+        q = ContestParticipants.query.filter_by(team_id=self.id)
+        if contest_id:
+            q = q.filter_by(contest_id=contest_id)
+        return [cp.user_id for cp in q.all()]
+
     def get_solves(self, admin=False, contest_id=None):
         from CTFd.utils import get_config
-        member_ids = [m.id for m in self.members]
+        member_ids = self._get_member_ids(contest_id=contest_id)
         q = Solves.query.filter(Solves.user_id.in_(member_ids))
         if contest_id:
             q = q.filter_by(contest_id=contest_id)
@@ -1268,7 +1260,7 @@ class Teams(db.Model):
 
     def get_fails(self, admin=False, contest_id=None):
         from CTFd.utils import get_config
-        member_ids = [m.id for m in self.members]
+        member_ids = self._get_member_ids(contest_id=contest_id)
         q = Fails.query.filter(Fails.user_id.in_(member_ids))
         if contest_id:
             q = q.filter_by(contest_id=contest_id)
@@ -1280,7 +1272,7 @@ class Teams(db.Model):
 
     def get_awards(self, admin=False, contest_id=None):
         from CTFd.utils import get_config
-        member_ids = [m.id for m in self.members]
+        member_ids = self._get_member_ids(contest_id=contest_id)
         q = Awards.query.filter(Awards.user_id.in_(member_ids))
         if contest_id:
             q = q.filter_by(contest_id=contest_id)
@@ -1293,8 +1285,10 @@ class Teams(db.Model):
     @cache.memoize()
     def get_score(self, admin=False, contest_id=None):
         score = 0
-        for member in self.members:
-            score += member.get_score(admin=admin, contest_id=contest_id)
+        for user_id in self._get_member_ids(contest_id=contest_id):
+            user = Users.query.get(user_id)
+            if user:
+                score += user.get_score(admin=admin, contest_id=contest_id)
         return score
 
     @cache.memoize()
@@ -1317,6 +1311,9 @@ class Tickets(db.Model):
     __tablename__ = "tickets"
 
     id              = db.Column(db.Integer, primary_key=True)
+    contest_id      = db.Column(
+        db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True
+    )
     author_id       = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"))
     title           = db.Column(db.String(255))
     type            = db.Column(db.String(80))
@@ -1325,6 +1322,8 @@ class Tickets(db.Model):
     replier_message = db.Column(db.Text, nullable=True)
     status          = db.Column(db.String(80), default="open")
     create_at       = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+
+    contest = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
 
 
 # =============================================================================
