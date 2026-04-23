@@ -260,9 +260,16 @@ def create_app(config="CTFd.config.Config"):
             db.create_all()
             stamp_latest_revision()
         else:
-            # This creates tables instead of db.create_all()
-            # Allows migrations to happen properly
-            upgrade()
+            # Only run migrations if schema has not been set up yet
+            from CTFd.utils.migrations import get_current_revision
+            try:
+                current_rev = get_current_revision()
+            except Exception:
+                current_rev = None
+            if current_rev is None:
+                upgrade()
+            else:
+                print(f"[CTFd] DB schema already at revision {current_rev}, skipping migrations.")
 
         from CTFd.models import ma
 
