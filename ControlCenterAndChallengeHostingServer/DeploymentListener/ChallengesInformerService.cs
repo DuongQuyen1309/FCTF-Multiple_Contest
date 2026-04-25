@@ -219,13 +219,13 @@ public class ChallengesInformerService
         var uid = pod.Metadata.Uid ?? "";
 
         // Get cache
-        var (teamId, challengeId) = ChallengeHelper.ParseDeploymentAppName(ns);
-        var key = ChallengeHelper.GetCacheKey(challengeId, teamId);
+        var (teamId, contestId, contestChallengeId) = ChallengeHelper.ParseDeploymentAppName(ns);
+        var key = ChallengeHelper.GetCacheKey(contestId, contestChallengeId, teamId);
         var cache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(key);
         // pod deleted
         if (eventType == WatchEventType.Deleted)
         {
-            await HandleDeletion(teamId, challengeId, key, cache, ns, onStatusChange);
+            await HandleDeletion(teamId, contestChallengeId, contestId, key, cache, ns, onStatusChange);
             return;
         }
 
@@ -233,7 +233,7 @@ public class ChallengesInformerService
         if (cache == null)
         {
             _logger.LogDebug($"Ghost pod detected! Namespace: {ns}, Pod: {pod}");
-            await CleanupGhostResources(ns, teamId, challengeId, key, onStatusChange);
+            await CleanupGhostResources(ns, teamId, contestChallengeId, contestId, key, onStatusChange);
             return;
         }
         // pod terminating
@@ -246,28 +246,28 @@ public class ChallengesInformerService
         // pod restarted
         if (cache.pod_id != uid)
         {
-            await HandlePodRestart(uid, teamId, challengeId, key, cache);
+            await HandlePodRestart(uid, teamId, contestChallengeId, contestId, key, cache);
         }
 
         // pod stuck (CrashLoopBackOff, ImagePullBackOff, etc)
         if (_k8sService.IsPodStuck(pod))
         {
             _logger.LogDebug($"Ghost pod detected! Namespace: Pod is stuck, deleting namespace: {ns}, Pod: {pod}");
-            await CleanupGhostResources(ns, teamId, challengeId, key, onStatusChange, DeploymentStatus.FAILED);
+            await CleanupGhostResources(ns, teamId, contestChallengeId, contestId, key, onStatusChange, DeploymentStatus.FAILED);
             return;
         }
 
         // running state
-        await HandleRunningState(pod, teamId, challengeId, cache, onStatusChange);
+        await HandleRunningState(pod, teamId, contestChallengeId, contestId, cache, onStatusChange);
     }
 
     #region Sub-Logics
 
-    private async Task HandleDeletion(int teamId, int challengeId, string key, ChallengeDeploymentCacheDTO? cache, string ns, OnDeploymentStatusChanged onStatusChange)
+    private async Task HandleDeletion(int teamId, int contestChallengeId, int contestId, string key, ChallengeDeploymentCacheDTO? cache, string ns, OnDeploymentStatusChanged onStatusChange)
     {
-        _logger.LogDebug($"Final cleanup for Challenge {challengeId} (Team {teamId}) (Namespace: {ns})");
-        await _redisHelper.AtomicRemoveDeploymentZSet(teamId.ToString(), key, challengeId.ToString());
-        await onStatusChange.Invoke(teamId, challengeId, cache?.user_id ?? 0, DeploymentStatus.STOPPED, null);
+        _logger.LogDebug($"Final cleanup for ContestChallenge {contestChallengeId} (Team {teamId}) (Namespace: {ns})");
+        await _redisHelper.AtomicRemoveDeploymentZSet(teamId.ToString(), key, contestChallengeId.ToString(), contestId);
+        await onStatusChange.Invoke(teamId, contestChallengeId, cache?.user_id ?? 0, DeploymentStatus.STOPPED, null);
 
         try
         {
@@ -285,20 +285,20 @@ public class ChallengesInformerService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, data: new { challengeId, teamId, errorType = "ChallengeStopTrackingSaveError" });
+            _logger.LogError(ex, data: new { contestChallengeId, teamId, errorType = "ChallengeStopTrackingSaveError" });
         }
     }
-    private async Task CleanupGhostResources(string ns, int teamId, int challengeId, string key, OnDeploymentStatusChanged onStatusChange, string status = DeploymentStatus.STOPPED)
+    private async Task CleanupGhostResources(string ns, int teamId, int contestChallengeId, int contestId, string key, OnDeploymentStatusChanged onStatusChange, string status = DeploymentStatus.STOPPED)
     {
         var deleted = await _k8sService.DeleteNamespace(ns);
         if (deleted)
         {
-            await _redisHelper.AtomicRemoveDeploymentZSet(teamId.ToString(), key, challengeId.ToString());
-            await onStatusChange.Invoke(teamId, challengeId, 0, status, null);
+            await _redisHelper.AtomicRemoveDeploymentZSet(teamId.ToString(), key, contestChallengeId.ToString(), contestId);
+            await onStatusChange.Invoke(teamId, contestChallengeId, 0, status, null);
         }
     }
 
-    private async Task HandlePodRestart(string newUid, int teamId, int challengeId, string key, ChallengeDeploymentCacheDTO cache)
+    private async Task HandlePodRestart(string newUid, int teamId, int contestChallengeId, int contestId, string key, ChallengeDeploymentCacheDTO cache)
     {
         cache.pod_id = newUid;
         cache.ready = false;
@@ -307,11 +307,11 @@ public class ChallengesInformerService
         if (remainingTtl > 0)
         {
             var cacheJson = JsonSerializer.Serialize(cache);
-            await _redisHelper.AtomicUpdateExpiration(teamId.ToString(), key, challengeId.ToString(), remainingTtl, cacheJson);
+            await _redisHelper.AtomicUpdateExpiration(teamId.ToString(), key, contestChallengeId.ToString(), remainingTtl, cacheJson, contestId);
         }
     }
 
-    private async Task HandleRunningState(V1Pod pod, int teamId, int challengeId, ChallengeDeploymentCacheDTO cache, OnDeploymentStatusChanged onStatusChange)
+    private async Task HandleRunningState(V1Pod pod, int teamId, int contestChallengeId, int contestId, ChallengeDeploymentCacheDTO cache, OnDeploymentStatusChanged onStatusChange)
     {
         var cs = pod.Status?.ContainerStatuses ?? Array.Empty<V1ContainerStatus>();
         var ready = cs.All(c => c.Ready);
@@ -321,10 +321,10 @@ public class ChallengesInformerService
         {
             if (cache.ready == true) return;
 
-            var deployResult = await _k8sService.HandleChallengeRunning(challengeId, teamId, cache._namespace, cache);
+            var deployResult = await _k8sService.HandleChallengeRunning(contestChallengeId, contestId, teamId, cache._namespace, cache);
             await onStatusChange.Invoke(
                 teamId,
-                challengeId,
+                contestChallengeId,
                 cache.user_id,
                 DeploymentStatus.RUNING,
                 deployResult?.challenge_url ?? ""
@@ -367,7 +367,7 @@ public class ChallengesInformerService
             foreach (var tracking in orphaned)
             {
                 _logger.LogDebug(
-                    $"[Reconcile] Fixing orphaned: ns={tracking.Label}, challengeId={tracking.ChallengeId}, teamId={tracking.TeamId}");
+                    $"[Reconcile] Fixing orphaned: ns={tracking.Label}, contestChallengeId={tracking.ContestChallengeId}, teamId={tracking.TeamId}");
 
                 // Fix DB
                 tracking.StoppedAt = DateTime.UtcNow;

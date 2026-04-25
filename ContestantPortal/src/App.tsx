@@ -12,7 +12,10 @@ import { ThemeProvider } from './context/ThemeContext';
 // Lazy load pages
 const Login = lazy(() => import('./pages/Login').then(module => ({ default: module.Login })));
 const Register = lazy(() => import('./pages/Register').then(module => ({ default: module.Register })));
-// Dashboard and Home screens have been removed; users go straight to challenges after login
+const ContestList = lazy(() => import('./pages/ContestList').then(module => ({ default: module.ContestList })));
+const CreateContest = lazy(() => import('./pages/CreateContest').then(module => ({ default: module.CreateContest })));
+const PullChallenges = lazy(() => import('./pages/PullChallenges').then(module => ({ default: module.PullChallenges })));
+const ImportParticipants = lazy(() => import('./pages/ImportParticipants').then(module => ({ default: module.ImportParticipants })));
 const Challenges = lazy(() => import('./pages/Challenges').then(module => ({ default: module.Challenges })));
 const Scoreboard = lazy(() => import('./pages/Scoreboard').then(module => ({ default: module.Scoreboard })));
 const PublicScoreboard = lazy(() => import('./pages/PublicScoreboard').then(module => ({ default: module.PublicScoreboard })));
@@ -36,6 +39,103 @@ function AppRoutes() {
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
               <Route path="/public/scoreboard" element={<PublicScoreboard />} />
+              <Route
+                path="/contests"
+                element={
+                  <PrivateRoute>
+                    <Layout><ContestList /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/create"
+                element={
+                  <PrivateRoute>
+                    <Layout><CreateContest /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/pull-challenges"
+                element={
+                  <PrivateRoute>
+                    <Layout><PullChallenges /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/import-participants"
+                element={
+                  <PrivateRoute>
+                    <Layout><ImportParticipants /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/challenges"
+                element={
+                  <PrivateRoute>
+                    <Layout><Challenges /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/challenge/:id"
+                element={
+                  <PrivateRoute>
+                    <Layout><Challenges /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/scoreboard"
+                element={
+                  <PrivateRoute>
+                    <Layout><Scoreboard /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/tickets"
+                element={
+                  <PrivateRoute>
+                    <Layout><Tickets /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/tickets/:id"
+                element={
+                  <PrivateRoute>
+                    <Layout><TicketDetail /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/instances"
+                element={
+                  <PrivateRoute>
+                    <Layout><Instances /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/contest/:contestId/action-logs"
+                element={
+                  <PrivateRoute>
+                    <Layout><ActionLogsPage /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/profile"
+                element={
+                  <PrivateRoute>
+                    <Layout><Profile /></Layout>
+                  </PrivateRoute>
+                }
+              />
+              {/* Legacy routes for backward compatibility */}
               <Route
                 path="/challenges"
                 element={
@@ -77,14 +177,6 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/profile"
-                element={
-                  <PrivateRoute>
-                    <Layout><Profile /></Layout>
-                  </PrivateRoute>
-                }
-              />
-              <Route
                 path="/instances"
                 element={
                   <PrivateRoute>
@@ -100,7 +192,7 @@ function AppRoutes() {
                   </PrivateRoute>
                 }
               />
-              <Route path="/" element={<Navigate to="/challenges" replace />} />
+              <Route path="/" element={<Navigate to="/contests" replace />} />
             </Routes>
           </Suspense>
         </AuthProvider>

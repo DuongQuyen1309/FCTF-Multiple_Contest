@@ -51,7 +51,7 @@ public class ScoreHelper
             .Select(g => new
             {
                 UserId = g.Key ?? 0,
-                Score = g.Sum(s => s.Challenge.Value ?? 0)
+                Score = g.Sum(s => s.ContestChallenge.Value ?? 0)
             })
             .ToDictionaryAsync(x => x.UserId, x => x.Score);
 
@@ -107,7 +107,7 @@ public class ScoreHelper
             .Where(s => userIds.Contains(s.UserId.Value) &&
                        (!freeze.HasValue || s.IdNavigation.Date < freeze.Value))
             .GroupBy(s => s.UserId)
-            .Select(g => new { UserId = g.Key.Value, Score = g.Sum(s => (int?)(s.Challenge.Value) ?? 0) })
+            .Select(g => new { UserId = g.Key.Value, Score = g.Sum(s => (int?)(s.ContestChallenge.Value) ?? 0) })
             .ToDictionaryAsync(x => x.UserId, x => x.Score);
 
         // Calculate awards in bulk
@@ -150,11 +150,11 @@ public class ScoreHelper
                 freeze = DateTimeOffset.FromUnixTimeSeconds(freezeTs).UtcDateTime;
         }
 
-        // First get team member IDs to simplify the query
-        var teamMemberIds = await _context.Users
+        // Get team member IDs from UserTeam junction table
+        var teamMemberIds = await _context.Set<UserTeam>()
             .AsNoTracking()
-            .Where(u => u.TeamId == team.Id)
-            .Select(u => u.Id)
+            .Where(ut => ut.TeamId == team.Id)
+            .Select(ut => ut.UserId)
             .ToListAsync();
 
         if (teamMemberIds.Count == 0)
@@ -165,7 +165,7 @@ public class ScoreHelper
             .AsNoTracking()
             .Where(s => teamMemberIds.Contains(s.UserId.Value) &&
                        (!freeze.HasValue || s.IdNavigation.Date < freeze.Value))
-            .SumAsync(s => (int?)(s.Challenge != null ? s.Challenge.Value : 0) ?? 0);
+            .SumAsync(s => (int?)(s.ContestChallenge != null ? s.ContestChallenge.Value : 0) ?? 0);
 
         // Calculate awards score
         var awardsScore = await _context.Awards
@@ -200,11 +200,11 @@ public class ScoreHelper
     public async Task<List<Solf>> GetTeamSolves(Team team, bool admin = false)
     {
 
-        // First get team member IDs to avoid complex navigation in LINQ
-        var teamMemberIds = await _context.Users
+        // Get team member IDs from UserTeam junction table
+        var teamMemberIds = await _context.Set<UserTeam>()
             .AsNoTracking()
-            .Where(u => u.TeamId == team.Id)
-            .Select(u => u.Id)
+            .Where(ut => ut.TeamId == team.Id)
+            .Select(ut => ut.UserId)
             .ToListAsync();
 
         if (!teamMemberIds.Any())
@@ -213,9 +213,9 @@ public class ScoreHelper
         var query = _context.Solves
             .AsNoTracking()
             .Include(s => s.IdNavigation)
-            .Include(s => s.Challenge)
+            .Include(s => s.ContestChallenge)
             .Include(s => s.User)
-            .ThenInclude(u => u.Team)
+            .ThenInclude(u => u.Teams)
             .Where(s => s.UserId.HasValue && teamMemberIds.Contains(s.UserId.Value))
             .OrderByDescending(s => s.IdNavigation.Date)
             .AsQueryable();
@@ -266,7 +266,7 @@ public class ScoreHelper
             .Where(s => allUserIds.Contains(s.UserId.Value) &&
                        (!freeze.HasValue || s.IdNavigation.Date < freeze.Value))
             .GroupBy(s => s.UserId)
-            .Select(g => new { UserId = g.Key.Value, Score = g.Sum(s => (int?)(s.Challenge.Value) ?? 0) })
+            .Select(g => new { UserId = g.Key.Value, Score = g.Sum(s => (int?)(s.ContestChallenge.Value) ?? 0) })
             .ToDictionaryAsync(x => x.UserId, x => x.Score);
 
         // Calculate awards in bulk for ALL teams at once
@@ -330,10 +330,10 @@ public class ScoreHelper
         // Materialize solve scores per team (explicit JOIN, no navigation inside GroupBy)
         var solveQuery =
             from solve in _context.Solves
-            join challenge in _context.Challenges on solve.ChallengeId equals challenge.Id
+            join contestChallenge in _context.ContestsChallenges on solve.ContestChallengeId equals contestChallenge.Id
             join submission in _context.Submissions on solve.Id equals submission.Id
-            where solve.TeamId != null && (challenge.Value ?? 0) != 0
-            select new { solve.TeamId, ChallengeValue = challenge.Value ?? 0, solve.Id, submission.Date };
+            where solve.TeamId != null && (contestChallenge.Value ?? 0) != 0
+            select new { solve.TeamId, ChallengeValue = contestChallenge.Value ?? 0, solve.Id, submission.Date };
 
         if (!admin && freezeUtc.HasValue)
             solveQuery = solveQuery.Where(x => x.Date < freezeUtc.Value);
@@ -437,10 +437,10 @@ public class ScoreHelper
     {
         var solveQuery =
             from solve in _context.Solves
-            join challenge in _context.Challenges on solve.ChallengeId equals challenge.Id
+            join contestChallenge in _context.ContestsChallenges on solve.ContestChallengeId equals contestChallenge.Id
             join submission in _context.Submissions on solve.Id equals submission.Id
-            where solve.UserId != null && (challenge.Value ?? 0) != 0
-            select new { solve.UserId, ChallengeValue = challenge.Value ?? 0, solve.Id, submission.Date };
+            where solve.UserId != null && (contestChallenge.Value ?? 0) != 0
+            select new { solve.UserId, ChallengeValue = contestChallenge.Value ?? 0, solve.Id, submission.Date };
 
         if (!admin && freezeUtc.HasValue)
             solveQuery = solveQuery.Where(x => x.Date < freezeUtc.Value);

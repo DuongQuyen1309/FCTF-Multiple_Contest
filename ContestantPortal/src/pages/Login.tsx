@@ -69,6 +69,11 @@ export function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log('[Login] Form submitted');
+    console.log('[Login] Username:', username);
+    console.log('[Login] Captcha enabled:', captchaEnabled);
+    console.log('[Login] Captcha token:', captchaTokenRef.current ? 'exists' : 'missing');
+
     if (captchaEnabled && !captchaTokenRef.current) {
       toast.error('Please complete captcha challenge');
       return;
@@ -78,18 +83,22 @@ export function Login() {
     await yieldToBrowser();
 
     try {
+      console.log('[Login] Calling login function...');
       await login(username, password, captchaTokenRef.current ?? undefined);
+      console.log('[Login] Login successful, navigating to /contests');
       toast.success('auth_success');
-      // after authentication, go directly to the challenges page
-      navigate('/challenges');
+      
+      // Navigate using React Router to maintain auth state
+      navigate('/contests');
     } catch (err) {
-      console.log(err);
+      console.error('[Login] Login failed:', err);
       resetCaptcha();
       // Display error message from backend 
       const errorMessage = err instanceof Error ? err.message : 'auth_failed';
       toast.error(errorMessage);
     } finally {
       setLoading(false);
+      console.log('[Login] Login process completed');
     }
   };
 

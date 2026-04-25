@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Backend Login</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        input {
+            width: 300px;
+            background: #2d2d2d;
+            border: 1px solid #3e3e3e;
+            color: #d4d4d4;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            cursor: pointer;
+            padding: 10px 20px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        .log {
+            background: #252526;
+            border: 1px solid #3e3e3e;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success { color: #4ec9b0; }
+        .error { color: #f48771; }
+        .info { color: #569cd6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Test Backend Login API</h1>
+        
+        <div>
+            <label>Backend URL:</label><br>
+            <input type="text" id="apiUrl" value="http://localhost:5069" style="width: 400px;">
+        </div>
+        
+        <div>
+            <label>Username:</label><br>
+            <input type="text" id="username" value="testuser">
+        </div>
+        
+        <div>
+            <label>Password:</label><br>
+            <input type="password" id="password" value="password123">
+        </div>
+        
+        <div style="margin-top: 15px;">
+            <button onclick="testLogin()">🚀 Test Login</button>
+            <button onclick="clearLog()">🗑️ Clear Log</button>
+            <button onclick="checkBackend()">🏥 Check Backend Health</button>
+        </div>
+        
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            logDiv.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        async function checkBackend() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            log('Checking backend health...', 'info');
+            
+            try {
+                const response = await fetch(`${apiUrl}/api/Config/get_public_config`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                log(`Backend responded with status: ${response.status}`, 'success');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`Backend is UP! Response: ${JSON.stringify(data, null, 2)}`, 'success');
+                } else {
+                    log(`Backend returned error: ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Cannot connect to backend: ${error.message}`, 'error');
+                log('Make sure backend is running on the specified URL', 'error');
+            }
+        }
+
+        async function testLogin() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            clearLog();
+            log('=== Starting Login Test ===', 'info');
+            log(`API URL: ${apiUrl}`, 'info');
+            log(`Username: ${username}`, 'info');
+            log(`Password: ${'*'.repeat(password.length)}`, 'info');
+            log('', 'info');
+            
+            const loginUrl = `${apiUrl}/api/Auth/login-contestant`;
+            log(`POST ${loginUrl}`, 'info');
+            
+            const payload = {
+                username: username,
+                password: password
+            };
+            
+            log(`Request payload: ${JSON.stringify(payload, null, 2)}`, 'info');
+            log('', 'info');
+            
+            try {
+                log('Sending request...', 'info');
+                const startTime = Date.now();
+                
+                const response = await fetch(loginUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                const duration = Date.now() - startTime;
+                log(`Response received in ${duration}ms`, 'info');
+                log(`Status: ${response.status} ${response.statusText}`, response.ok ? 'success' : 'error');
+                log('', 'info');
+                
+                const responseText = await response.text();
+                log('Raw response:', 'info');
+                log(responseText, 'info');
+                log('', 'info');
+                
+                try {
+                    const data = JSON.parse(responseText);
+                    log('Parsed response:', 'info');
+                    log(JSON.stringify(data, null, 2), 'info');
+                    log('', 'info');
+                    
+                    if (response.ok) {
+                        log('✅ LOGIN SUCCESSFUL!', 'success');
+                        
+                        if (data.generatedToken) {
+                            log(`✅ Token exists: ${data.generatedToken.substring(0, 50)}...`, 'success');
+                            log(`Token length: ${data.generatedToken.length}`, 'success');
+                        } else {
+                            log('❌ WARNING: No generatedToken in response!', 'error');
+                        }
+                        
+                        if (data.user) {
+                            log(`✅ User data exists:`, 'success');
+                            log(`   - ID: ${data.user.id}`, 'success');
+                            log(`   - Username: ${data.user.username}`, 'success');
+                            log(`   - Email: ${data.user.email}`, 'success');
+                            log(`   - Type: ${data.user.type}`, 'success');
+                        } else {
+                            log('❌ WARNING: No user data in response!', 'error');
+                        }
+                        
+                        // Test saving to localStorage
+                        log('', 'info');
+                        log('Testing localStorage...', 'info');
+                        localStorage.setItem('test_token', data.generatedToken);
+                        localStorage.setItem('test_user', JSON.stringify(data.user));
+                        
+                        const savedToken = localStorage.getItem('test_token');
+                        const savedUser = localStorage.getItem('test_user');
+                        
+                        if (savedToken && savedUser) {
+                            log('✅ localStorage works correctly', 'success');
+                        } else {
+                            log('❌ localStorage failed!', 'error');
+                        }
+                        
+                    } else {
+                        log('❌ LOGIN FAILED!', 'error');
+                        log(`Error message: ${data.message || 'Unknown error'}`, 'error');
+                    }
+                } catch (parseError) {
+                    log('❌ Failed to parse response as JSON', 'error');
+                    log(`Parse error: ${parseError.message}`, 'error');
+                }
+                
+            } catch (error) {
+                log('❌ REQUEST FAILED!', 'error');
+                log(`Error: ${error.message}`, 'error');
+                log('', 'error');
+                
+                if (error.message.includes('Failed to fetch')) {
+                    log('Possible causes:', 'error');
+                    log('1. Backend is not running', 'error');
+                    log('2. Wrong URL or port', 'error');
+                    log('3. CORS issue', 'error');
+                    log('4. Network/firewall blocking the request', 'error');
+                }
+            }
+        }
+        
+        // Auto-check backend on load
+        window.addEventListener('load', () => {
+            log('Page loaded. Click "Check Backend Health" to verify backend is running.', 'info');
+        });
+    </script>
+</body>
+</html>

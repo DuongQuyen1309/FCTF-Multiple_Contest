@@ -8,7 +8,9 @@ namespace ResourceShared.DTOs.Challenge
 {
     public class ChallengCheckStatusReqDTO
     {
+        /// <summary>contestChallengeId (contests_challenges.id)</summary>
         public int challengeId { get; set; }
+        public int contestId { get; set; }
         public int teamId { get; set; }
         public string? unixTime { get; set; }
     }

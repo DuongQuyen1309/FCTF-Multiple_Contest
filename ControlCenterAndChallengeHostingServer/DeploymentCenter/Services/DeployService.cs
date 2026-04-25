@@ -52,7 +52,7 @@ public class DeployService : IDeployService
 
     public async Task<ChallengeDeployResponeDTO> Start(ChallengeStartStopReqDTO startReq)
     {
-        var deploymentKey = ChallengeHelper.GetCacheKey(startReq.challengeId, startReq.teamId);
+        var deploymentKey = ChallengeHelper.GetCacheKey(startReq.contestId, startReq.contestChallengeId, startReq.teamId);
 
         // Get cache: thông tin deployment, kiểm tra đã từng gửi vào argo chưa
         var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
@@ -126,7 +126,7 @@ public class DeployService : IDeployService
                     // Clean up old STOPPED cache and allow new deployment
                     await Console.Out.WriteLineAsync($"Removing STOPPED cache for {deploymentKey} before new deployment");
                     await _redisHelper.RemoveCacheAsync(deploymentKey);
-                    await _redisHelper.AtomicRemoveDeploymentZSet(startReq.teamId.ToString(), deploymentKey, startReq.challengeId.ToString());
+                    await _redisHelper.AtomicRemoveDeploymentZSet(startReq.teamId.ToString(), deploymentKey, startReq.contestChallengeId.ToString(), startReq.contestId);
                     break;
                 default:
                     await Console.Out.WriteLineAsync($"Unknown deployment status: {deploymentCache.status}");
@@ -142,7 +142,8 @@ public class DeployService : IDeployService
 
             deploymentCache = new ChallengeDeploymentCacheDTO
             {
-                challenge_id = startReq.challengeId,
+                challenge_id = startReq.contestChallengeId,
+                contest_id = startReq.contestId,
                 user_id = startReq?.userId ?? 0,
                 team_id = startReq?.teamId ?? 0,
                 _namespace = string.Empty,
@@ -217,7 +218,7 @@ public class DeployService : IDeployService
     {
         try
         {
-            var deploymentKey = ChallengeHelper.GetCacheKey(stopReq.challengeId, stopReq.teamId);
+            var deploymentKey = ChallengeHelper.GetCacheKey(stopReq.contestId, stopReq.contestChallengeId, stopReq.teamId);
             var deployInfo = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
 
             if (deploymentKey == null || deployInfo == null)
@@ -241,7 +242,7 @@ public class DeployService : IDeployService
                 await _k8SHealthService.DeleteNamespace(deployInfo._namespace ?? string.Empty);
 
                 deployInfo.status = DeploymentStatus.STOPPED;
-                await _redisHelper.AtomicRemoveDeploymentZSet(stopReq.teamId.ToString(), deploymentKey, stopReq.challengeId.ToString());
+                await _redisHelper.AtomicRemoveDeploymentZSet(stopReq.teamId.ToString(), deploymentKey, stopReq.contestChallengeId.ToString(), stopReq.contestId);
                 await _redisHelper.RemoveCacheAsync(deploymentKey);
 
                 return new ChallengeDeployResponeDTO
@@ -261,9 +262,10 @@ public class DeployService : IDeployService
             await _redisHelper.AtomicUpdateExpiration(
                 stopReq.teamId.ToString(),
                 deploymentKey,
-                stopReq.challengeId.ToString(),
+                stopReq.contestChallengeId.ToString(),
                 40,  // TTL 40s đủ để pod terminate
-                cacheJson
+                cacheJson,
+                stopReq.contestId
             );
 
 
@@ -336,7 +338,7 @@ public class DeployService : IDeployService
     {
         try
         {
-            var deploymentKey = ChallengeHelper.GetCacheKey(statusReq.challengeId, statusReq.teamId);
+            var deploymentKey = ChallengeHelper.GetCacheKey(statusReq.contestId, statusReq.challengeId, statusReq.teamId);
 
             var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
 
@@ -359,6 +361,7 @@ public class DeployService : IDeployService
                 // Nếu pod đang chạy thì lấy thông tin domain, port ... lưu vào cache và trả về cho client 
                 var result = await _k8SHealthService.HandleChallengeRunning(
                     statusReq.challengeId,
+                    statusReq.contestId,
                     deploymentCache.team_id,
                     podName,
                     deploymentCache);
@@ -438,16 +441,21 @@ public class DeployService : IDeployService
 
             //var log = await _k8SHealthService.GetWorkflowLogs(message.WorkFlowName);
 
+            // TODO: DeployHistory now requires ContestChallengeId, not ChallengeId
+            // This endpoint seems to be for bank challenge deployment, not contest challenge
+            // Need to refactor this logic for multiple contest architecture
+            /*
             var History = new DeployHistory
             {
-                ChallengeId = message.ChallengeId.Value,
+                ContestChallengeId = message.ChallengeId.Value, // This is wrong - need ContestChallengeId
                 DeployStatus = deploystatus,
                 DeployAt = DateTime.UtcNow,
                 LogContent = message.WorkFlowName
             };
+            await _dbContext.DeployHistories.AddAsync(History);
+            */
 
             _dbContext.Challenges.Update(challenge);
-            await _dbContext.DeployHistories.AddAsync(History);
             await _dbContext.SaveChangesAsync();
 
             return new BaseResponseDTO

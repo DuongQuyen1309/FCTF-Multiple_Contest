@@ -82,7 +82,7 @@ internal class Worker : BackgroundService
                 continue;
             }
 
-            var deploymentKey = ChallengeHelper.GetCacheKey(startReq.challengeId, startReq.teamId);
+            var deploymentKey = ChallengeHelper.GetCacheKey(startReq.contestId, startReq.contestChallengeId, startReq.teamId);
             var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
             // create new scope for db context
             using var messageScope = _scopeFactory.CreateScope();
@@ -91,22 +91,22 @@ internal class Worker : BackgroundService
             {
                 if (deploymentCache == null) throw new InvalidOperationException("Deployment cache not found");
 
-                var challenge = await messageDbContext.Challenges
-                    .FirstOrDefaultAsync(c => c.Id == startReq.challengeId, cancellationToken: stoppingToken)
-                    ?? throw new InvalidOperationException($"Challenge {startReq.challengeId} not found");
+                var contestChallenge = await messageDbContext.ContestsChallenges
+                    .FirstOrDefaultAsync(c => c.Id == startReq.contestChallengeId, cancellationToken: stoppingToken)
+                    ?? throw new InvalidOperationException($"Contest challenge {startReq.contestChallengeId} not found");
 
-                var jsonImageLink = challenge.ImageLink
+                var jsonImageLink = contestChallenge.ImageLink
                     ?? throw new InvalidOperationException("Challenge image link is null");
 
                 var imageObj = JsonSerializer.Deserialize<ChallengeImageDTO>(jsonImageLink)
-                    ?? throw new InvalidOperationException($"Unable to deserialize ChallengeImageDTO for Challenge ID: {challenge.Id}.");
+                    ?? throw new InvalidOperationException($"Unable to deserialize ChallengeImageDTO for Challenge ID: {contestChallenge.Id}.");
 
-                var cpuLimit = (challenge.CpuLimit ?? 0) > 0 ? challenge.CpuLimit!.Value : 300;
-                var cpuRequest = (challenge.CpuRequest ?? 0) > 0 ? challenge.CpuRequest!.Value : cpuLimit;
-                var memoryLimit = (challenge.MemoryLimit ?? 0) > 0 ? challenge.MemoryLimit!.Value : 256;
-                var memoryRequest = (challenge.MemoryRequest ?? 0) > 0 ? challenge.MemoryRequest!.Value : memoryLimit;
-                var useGvisor = challenge.UseGvisor ?? true;
-                var hardenContainer = challenge.HardenContainer ?? true;
+                var cpuLimit = (contestChallenge.CpuLimit ?? 0) > 0 ? contestChallenge.CpuLimit!.Value : 300;
+                var cpuRequest = (contestChallenge.CpuRequest ?? 0) > 0 ? contestChallenge.CpuRequest!.Value : cpuLimit;
+                var memoryLimit = (contestChallenge.MemoryLimit ?? 0) > 0 ? contestChallenge.MemoryLimit!.Value : 256;
+                var memoryRequest = (contestChallenge.MemoryRequest ?? 0) > 0 ? contestChallenge.MemoryRequest!.Value : memoryLimit;
+                var useGvisor = contestChallenge.UseGvisor ?? true;
+                var hardenContainer = contestChallenge.HardenContainer ?? true;
 
                 var cpuLimitValue = $"{cpuLimit}m";
                 var cpuRequestValue = $"{cpuRequest}m";
@@ -114,8 +114,10 @@ internal class Worker : BackgroundService
                 var memoryRequestValue = $"{memoryRequest}Mi";
 
                 var (payload, appName) = ChallengeHelper.BuildArgoPayload(
-                    challenge,
+                    contestChallenge,
                     startReq.teamId,
+                    startReq.contestId,
+                    startReq.contestChallengeId,
                     imageObj,
                     cpuLimitValue,
                     cpuRequestValue,
@@ -157,9 +159,10 @@ internal class Worker : BackgroundService
                 await _redisHelper.AtomicUpdateExpiration(
                     startReq?.teamId.ToString() ?? string.Empty,
                     deploymentKey,
-                    startReq?.challengeId.ToString() ?? string.Empty,
+                    startReq?.contestChallengeId.ToString() ?? string.Empty,
                     realTtlSeconds: DeploymentConsumerConfigHelper.ARGO_DEPLOY_TTL_MINUTES * 60,
-                    JsonSerializer.Serialize(deploymentCache));
+                    JsonSerializer.Serialize(deploymentCache),
+                    startReq?.contestId ?? 0);
             }
             catch (Exception ex)
             {
