@@ -1,4 +1,4 @@
-﻿using ContestantBE.Attribute;
+using ContestantBE.Attribute;
 using ContestantBE.Interfaces;
 using ContestantBE.Services;
 using ContestantBE.Utils;
@@ -17,6 +17,7 @@ using static ResourceShared.Enums;
 namespace ContestantBE.Controllers;
 
 [Authorize]
+[RequireContest] // Require contest selection for all challenge endpoints
 public class ChallengeController : BaseController
 {
     private readonly AppDbContext _context;
@@ -57,7 +58,6 @@ public class ChallengeController : BaseController
             || message.Contains("constraint", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Helper method: Increment and check KPM using Redis atomic INCR
     private async Task<(bool exceeded, int current)> CheckAndIncrementKpmAsync(int userId, int limit)
     {
         if (limit <= 0) return (false, 0);
@@ -66,25 +66,14 @@ public class ChallengeController : BaseController
         var currentMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
         var kpmWithMinuteKey = $"{kpmKey}_{currentMinute}";
 
-        // Use Redis INCR - atomic operation (thread-safe)
         var redis = await _redisHelper.GetDatabaseAsync();
         var newCount = await redis.StringIncrementAsync(kpmWithMinuteKey);
 
-        // Always set TTL to ensure key expires at end of current minute + 1 minute buffer
-        // This prevents keys from persisting indefinitely if TTL fails on first increment
         var ttl = await redis.KeyTimeToLiveAsync(kpmWithMinuteKey);
         if (!ttl.HasValue || ttl.Value.TotalSeconds < 0)
-        {
-            // Key has no TTL or already expired, set it for 90 seconds (current minute + 30s buffer)
             await redis.KeyExpireAsync(kpmWithMinuteKey, TimeSpan.FromSeconds(90));
-        }
 
-        // Check if exceeded limit
-        if (newCount > limit)
-        {
-            return (true, (int)newCount);
-        }
-
+        if (newCount > limit) return (true, (int)newCount);
         return (false, (int)newCount);
     }
 
@@ -95,29 +84,24 @@ public class ChallengeController : BaseController
         try
         {
             var userId = UserContext.UserId;
+            var teamId = UserContext.TeamId;
+            var contestId = UserContext.ContestId;
+
             var user = await _context.Users
-                .Include(u => u.Team)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Id == userId);
 
             if (user == null)
                 return NotFound(new { error = "User not found" });
 
-            _userBehaviorLogger.Log("VIEW_CHALLENGE", user.Id, user.TeamId, new { challengeId = id });
+            _userBehaviorLogger.Log("VIEW_CHALLENGE", user.Id, teamId, new { contestChallengeId = id });
 
-            var result = await _challengeServices.GetById(id, user);
+            var result = await _challengeServices.GetById(id, teamId, user, contestId);
 
             if (result.HttpStatusCode != HttpStatusCode.OK || result.Data == null)
-            {
-                return StatusCode((int)result.HttpStatusCode, new
-                {
-                    success = false,
-                    message = result.Message
-                });
-            }
+                return StatusCode((int)result.HttpStatusCode, new { success = false, message = result.Message });
 
             if (result.Data.is_started)
-            {
                 return StatusCode((int)result.HttpStatusCode, new
                 {
                     message = result.Message,
@@ -127,7 +111,6 @@ public class ChallengeController : BaseController
                     result.Data.challenge_url,
                     result.Data.time_remaining
                 });
-            }
 
             return StatusCode((int)result.HttpStatusCode, new
             {
@@ -139,11 +122,7 @@ public class ChallengeController : BaseController
         }
         catch (Exception ex)
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = $"An error occurred {ex.Message}"
-            });
+            return BadRequest(new { success = false, message = $"An error occurred {ex.Message}" });
         }
     }
 
@@ -152,31 +131,21 @@ public class ChallengeController : BaseController
     public async Task<IActionResult> GetByTopic()
     {
         var userId = UserContext.UserId;
-        var user = await _context.Users
-            .Include(u => u.Team)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == userId);
+        var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
 
-        if (user == null)
-            return NotFound(new { error = "User not found" });
+        var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        if (user == null) return NotFound(new { error = "User not found" });
 
         try
         {
-            _userBehaviorLogger.Log("VIEW_All_TOPIC", user.Id, user.TeamId, null);
-            var result = await _challengeServices.GetTopic(user);
-            return Ok(new
-            {
-                success = true,
-                data = result
-            });
+            _userBehaviorLogger.Log("VIEW_All_TOPIC", user.Id, teamId, null);
+            var result = await _challengeServices.GetTopic(teamId, contestId);
+            return Ok(new { success = true, data = result });
         }
         catch (Exception ex)
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = ex.Message
-            });
+            return BadRequest(new { success = false, message = ex.Message });
         }
     }
 
@@ -186,13 +155,10 @@ public class ChallengeController : BaseController
     {
         var userId = UserContext.UserId;
         var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
         _userBehaviorLogger.Log("VIEW_CHALLENGES_BY_CATEGORY", userId, teamId, new { category = category_name });
-        var challenges = await _challengeServices.GetChallengeByCategories(category_name, teamId);
-        return Ok(new
-        {
-            success = true,
-            data = challenges
-        });
+        var challenges = await _challengeServices.GetChallengeByCategories(category_name, teamId, contestId);
+        return Ok(new { success = true, data = challenges });
     }
 
     [HttpGet("instances")]
@@ -203,22 +169,15 @@ public class ChallengeController : BaseController
         {
             var userId = UserContext.UserId;
             var teamId = UserContext.TeamId;
+            var contestId = UserContext.ContestId;
 
             _userBehaviorLogger.Log("VIEW_TEAM_CHALLENGE_INSTANCES", userId, teamId, null);
-            var instances = await _challengeServices.GetAllInstances(teamId);
-            return Ok(new
-            {
-                success = true,
-                data = instances
-            });
+            var instances = await _challengeServices.GetAllInstances(teamId, contestId);
+            return Ok(new { success = true, data = instances });
         }
         catch (Exception ex)
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = ex.Message
-            });
+            return BadRequest(new { success = false, message = ex.Message });
         }
     }
 
@@ -227,641 +186,461 @@ public class ChallengeController : BaseController
     public async Task<IActionResult> Attempt([FromBody] ChallengeAttemptRequest request)
     {
         var userId = UserContext.UserId;
+        var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
+
         var user = await _context.Users
-            .Include(u => u.Team)
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == userId);
 
         if (request.ChallengeId == 0)
             return BadRequest(new { error = "ChallengeId is required" });
 
-        var challenge = await _context.Challenges
-            .FirstOrDefaultAsync(c => c.Id == request.ChallengeId);
+        // Load ContestsChallenge (cc) with bank challenge flags for flag comparison
+        var cc = await _context.ContestsChallenges
+            .Include(c => c.BankChallenge!.Flags)
+            .FirstOrDefaultAsync(c => c.Id == request.ChallengeId && c.ContestId == contestId);
 
-        if (challenge == null)
+        if (cc == null || cc.BankChallenge == null)
             return NotFound(new { error = "Challenge not found" });
 
-        await Console.Out.WriteLineAsync($"[Requesst Attempt Challenge] User {userId} : Team {user?.TeamId} : Challenge {challenge.Name} with flag {request.Submission}");
+        var bank = cc.BankChallenge;
 
-        _userBehaviorLogger.Log("ATTEMPT_CHALLENGE", user?.Id, user?.TeamId, new { challengeId = request.ChallengeId, flag = request.Submission });
+        await Console.Out.WriteLineAsync($"[Attempt] User {userId} : Team {teamId} : Challenge {cc.Name ?? bank.Name} with flag {request.Submission}");
+
+        _userBehaviorLogger.Log("ATTEMPT_CHALLENGE", user?.Id, teamId, new { contestChallengeId = request.ChallengeId, flag = request.Submission });
+
         if (_configHelper.GetConfig("paused", false))
-        {
             return StatusCode(StatusCodes.Status403Forbidden, new
             {
                 success = true,
-                data = new
-                {
-                    status = "paused",
-                    message = $"{_configHelper.CtfName().ToString()} is paused"
-                }
+                data = new { status = "paused", message = $"{_configHelper.CtfName()} is paused" }
             });
-        }
 
-        if (_configHelper.IsUserMode() && user?.Team == null)
+        if (!_configHelper.IsUserMode() && teamId == 0)
             return Forbid();
 
         request.Submission = request.Submission?.Trim();
 
-        // Validate submission length (max 1000 characters)
         if (string.IsNullOrEmpty(request.Submission))
-        {
-            return BadRequest(new
-            {
-                success = false,
-                data = new
-                {
-                    status = "invalid",
-                    message = "Submission cannot be empty"
-                }
-            });
-        }
+            return BadRequest(new { success = false, data = new { status = "invalid", message = "Submission cannot be empty" } });
 
         if (request.Submission.Length > 1000)
-        {
-            return BadRequest(new
-            {
-                success = false,
-                data = new
-                {
-                    status = "invalid",
-                    message = "Submission exceeds maximum length of 1000 characters"
-                }
-            });
-        }
-        var team = user?.Team;
+            return BadRequest(new { success = false, data = new { status = "invalid", message = "Submission exceeds maximum length of 1000 characters" } });
 
-        // Check captain_only_submit_challenge config
+        // Captain-only submit check
         var captainOnlySubmit = _configHelper.GetConfig("captain_only_submit_challenge", false);
-        if (captainOnlySubmit && team != null && team.CaptainId != user?.Id)
+        if (captainOnlySubmit && teamId > 0)
         {
-            return StatusCode(StatusCodes.Status403Forbidden, new
-            {
-                success = false,
-                data = new
+            var captainId = await _context.Teams
+                .AsNoTracking()
+                .Where(t => t.Id == teamId)
+                .Select(t => t.CaptainId)
+                .FirstOrDefaultAsync();
+            if (captainId.HasValue && captainId.Value != userId)
+                return StatusCode(StatusCodes.Status403Forbidden, new
                 {
-                    status = "forbidden",
-                    message = "Only the team captain has permission to submit flags for challenges."
-                }
-            });
+                    success = false,
+                    data = new { status = "forbidden", message = "Only the team captain has permission to submit flags for challenges." }
+                });
         }
 
-        // Cooldown check - Check if still in cooldown period
-        var cooldownSeconds = challenge.Cooldown ?? 0;
-
+        // Cooldown check
+        var cooldownSeconds = cc.Cooldown ?? 0;
         if (cooldownSeconds > 0)
         {
-            var cooldownKey = $"submission_cooldown_{challenge.Id}_{user?.TeamId}";
+            var cooldownKey = $"contest:{contestId}:submission_cooldown_{cc.Id}_{teamId}";
             var nowSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var cooldownCheck = await _redisHelper.CheckAndUpdateCooldownAsync(
-                cooldownKey,
-                nowSeconds,
-                cooldownSeconds,
-                ttlSeconds: 600
-            );
-
+            var cooldownCheck = await _redisHelper.CheckAndUpdateCooldownAsync(cooldownKey, nowSeconds, cooldownSeconds, ttlSeconds: 600);
             if (cooldownCheck >= 0)
             {
                 var timeElapsed = nowSeconds - cooldownCheck;
                 if (timeElapsed < cooldownSeconds)
                 {
                     var remainingCooldown = (int)(cooldownSeconds - timeElapsed);
-                    _userBehaviorLogger.Log("CHALLENGE_SUBMISSION_RATE_LIMITED", user?.Id, user?.TeamId, new { challengeId = request.ChallengeId, remainingCooldown }, LogLevel.Warning);
+                    _userBehaviorLogger.Log("CHALLENGE_SUBMISSION_RATE_LIMITED", user?.Id, teamId, new { contestChallengeId = request.ChallengeId, remainingCooldown }, LogLevel.Warning);
                     return StatusCode(StatusCodes.Status429TooManyRequests, new
                     {
                         success = true,
-                        data = new
-                        {
-                            status = "ratelimited",
-                            message = $"Please wait {remainingCooldown} seconds before submitting again.",
-                            cooldown = remainingCooldown
-                        }
+                        data = new { status = "ratelimited", message = $"Please wait {remainingCooldown} seconds before submitting again.", cooldown = remainingCooldown }
                     });
                 }
             }
         }
 
-        if (challenge.State == "hidden") return NotFound();
-        if (challenge.State == "locked") return Forbid();
+        if (cc.State == "hidden") return NotFound();
+        if (cc.State == "locked") return Forbid();
 
-        // Check prerequisites from Requirements JSON
-        if (!string.IsNullOrEmpty(challenge.Requirements))
+        // Prerequisite check using bank IDs
+        if (!string.IsNullOrEmpty(bank.Requirements))
         {
             try
             {
-                var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(challenge.Requirements);
-
+                var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(bank.Requirements);
                 if (requirementsObj?.prerequisites != null && requirementsObj.prerequisites.Count > 0)
                 {
-                    var solve_ids = (await _context.Solves
-                                    .AsNoTracking()
-                                    .Where(s => s.TeamId == user.TeamId)
-                                    .Select(s => s.ChallengeId)
-                                    .OrderBy(id => id)
-                                    .ToListAsync()).ToHashSet();
+                    var solvedBankIds = (await _context.Solves
+                        .AsNoTracking()
+                        .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                        .Select(s => s.ContestChallenge.BankId!.Value)
+                        .ToListAsync()).ToHashSet();
 
-                    var all_challenge_ids = (await _context.Challenges
-                                            .AsNoTracking()
-                                            .Select(c => c.Id)
-                                            .ToListAsync()).ToHashSet();
+                    var allBankIds = (await _context.ContestsChallenges
+                        .AsNoTracking()
+                        .Where(c => c.ContestId == contestId && c.BankId.HasValue)
+                        .Select(c => c.BankId!.Value)
+                        .ToListAsync()).ToHashSet();
 
-                    // Convert prereq ids to nullable ints to match solve_ids (IEnumerable<int?>)
                     var prereqs = requirementsObj.prerequisites
-                                        .Where(all_challenge_ids.Contains)
-                                        .Select(id => (int?)id)
-                                        .ToHashSet();
+                        .Where(allBankIds.Contains)
+                        .ToHashSet();
 
-                    if (!solve_ids.IsSupersetOf(prereqs))
-                    {
+                    if (!solvedBankIds.IsSupersetOf(prereqs))
                         return StatusCode(StatusCodes.Status403Forbidden, new
                         {
                             success = false,
                             message = "You don't have the permission to access this challenge. Complete the required challenges first."
                         });
-                    }
                 }
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"Error parsing requirements for challenge {challenge.Id}: {ex.Message}");
+                await Console.Error.WriteLineAsync($"Error parsing requirements for cc {cc.Id}: {ex.Message}");
             }
         }
 
-        // Pre-check 1: Already solved (no lock - read-only, common case)
+        // Pre-check 1: already solved
         var solvePreCheck = await _context.Solves
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId);
+            .FirstOrDefaultAsync(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId);
         if (solvePreCheck != null)
-        {
-            return Ok(new
-            {
-                success = true,
-                data = new
-                {
-                    status = "already_solved",
-                    message = "You or your teammate already solved this"
-                }
-            });
-        }
+            return Ok(new { success = true, data = new { status = "already_solved", message = "You or your teammate already solved this" } });
 
-        // Pre-check 2: Max attempts exceeded (no lock - optimistic check)
+        // Pre-check 2: max attempts
         int? currentFailsPreCheck = null;
-        if (challenge.MaxAttempts.HasValue && challenge.MaxAttempts.Value > 0)
+        if (cc.MaxAttempts.HasValue && cc.MaxAttempts.Value > 0)
         {
             currentFailsPreCheck = await _context.Submissions
                 .AsNoTracking()
-                .Where(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId && s.Type == "incorrect")
+                .Where(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId && s.Type == "incorrect")
                 .CountAsync();
 
-            if (currentFailsPreCheck >= challenge.MaxAttempts.Value)
-            {
-                return BadRequest(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        status = "incorrect",
-                        message = "You have 0 tries remaining"
-                    }
-                });
-            }
+            if (currentFailsPreCheck >= cc.MaxAttempts.Value)
+                return BadRequest(new { success = true, data = new { status = "incorrect", message = "You have 0 tries remaining" } });
         }
 
-        // Attempt the challenge (outside lock - CPU intensive, parallel execution OK)
-        AttemptDTO attempt = await ChallengeHelper.Attempt(_context, challenge, request);
-        var deploymentKey = ChallengeHelper.GetCacheKey(challenge.Id, user.TeamId.Value);
+        // Flag comparison — flags are on the bank challenge
+        AttemptDTO attempt = await ChallengeHelper.Attempt(_context, bank, request);
+        var deploymentKey = ChallengeHelper.GetCacheKey(contestId, cc.Id, teamId);
 
-        // Handle correct attempt - CRITICAL SECTION with minimal lock
         if (attempt.status)
         {
-            // Re-validate inside lock (race condition protection)
             var solveCheck = await _context.Solves
                 .AsNoTracking()
-                .FirstOrDefaultAsync(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId);
+                .FirstOrDefaultAsync(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId);
             if (solveCheck != null)
-            {
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        status = "already_solved",
-                        message = "You or your teammate already solved this"
-                    }
-                });
-            }
+                return Ok(new { success = true, data = new { status = "already_solved", message = "You or your teammate already solved this" } });
+
             try
             {
                 var submission = new Submission
                 {
-                    UserId = user.Id,
-                    TeamId = user.TeamId,
-                    ChallengeId = challenge.Id,
+                    ContestId = contestId,
+                    ContestChallengeId = cc.Id,
+                    UserId = user?.Id,
+                    TeamId = teamId,
                     Ip = _userHelper.GetIP(HttpContext),
                     Provided = request.Submission,
                     Type = SubmissionTypes.CORRECT,
                     Solf = new Solf
                     {
-                        UserId = user.Id,
-                        TeamId = user.TeamId,
-                        ChallengeId = challenge.Id,
+                        ContestId = contestId,
+                        ContestChallengeId = cc.Id,
+                        UserId = user?.Id,
+                        TeamId = teamId,
                     }
                 };
-
                 _context.Submissions.Add(submission);
                 await _context.SaveChangesAsync();
             }
             catch (DbUpdateException ex) when (IsDuplicateKey(ex))
             {
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        status = "already_solved",
-                        message = "You or your teammate already solved this"
-                    }
-                });
+                return Ok(new { success = true, data = new { status = "already_solved", message = "You or your teammate already solved this" } });
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"[Error] Submission save failed for challenge {challenge.Id}, team {user.TeamId}: {ex.Message}");
-                return StatusCode(StatusCodes.Status500InternalServerError, new
-                {
-                    success = false,
-                    error = "Failed to record submission. Please try again."
-                });
-            }
-            // Handle dynamic challenge value calculation
-            if (challenge.Type == "dynamic")
-            {
-                _ = await DynamicChallengeHelper.RecalculateDynamicChallengeValue(
-                    _context,
-                    challenge.Id,
-                    _redisLockHelper);
+                await Console.Error.WriteLineAsync($"[Error] Submission save failed for cc {cc.Id}, team {teamId}: {ex.Message}");
+                return StatusCode(StatusCodes.Status500InternalServerError, new { success = false, error = "Failed to record submission. Please try again." });
             }
 
-            // Auto stop challenge if require_deploy and cache exists
-            if (challenge.RequireDeploy && await _redisHelper.KeyExistsAsync(deploymentKey))
+            if (bank.Type == "dynamic")
             {
-                try
-                {
-                    _ = await _challengeServices.ForceStopChallenge(challenge.Id, user);
-                }
-                catch (Exception ex)
-                {
-                    await Console.Error.WriteLineAsync($"Error stopping challenge {challenge.Id} for team {user.TeamId}: {ex.Message}");
-                }
+                _ = await DynamicChallengeHelper.RecalculateDynamicChallengeValue(_context, cc.Id, contestId, _redisLockHelper);
+            }
+
+            if (cc.RequireDeploy && await _redisHelper.KeyExistsAsync(deploymentKey))
+            {
+                try { _ = await _challengeServices.ForceStopChallenge(cc.Id, teamId, user!, contestId); }
+                catch (Exception ex) { await Console.Error.WriteLineAsync($"Error stopping cc {cc.Id} for team {teamId}: {ex.Message}"); }
             }
 
             try
             {
                 await _actionLogsServices.SaveActionLogs(new ActionLogsReq
                 {
-                    ActionType = 3, // CORRECT_FLAG
-                    ActionDetail = $"Nộp cờ đúng cho thử thách {challenge.Name}",
-                    ChallengeId = challenge.Id,
-                }, user.Id);
+                    ActionType = 3,
+                    ActionDetail = $"Nộp cờ đúng cho thử thách {cc.Name ?? bank.Name}",
+                    ChallengeId = cc.Id,
+                }, user?.Id ?? userId);
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"[ActionLog] Failed to save CORRECT_FLAG log for challenge {challenge.Id}: {ex.Message}");
+                await Console.Error.WriteLineAsync($"[ActionLog] Failed to save CORRECT_FLAG log for cc {cc.Id}: {ex.Message}");
             }
 
             return Ok(new
             {
                 success = true,
-                data = new
-                {
-                    status = "correct",
-                    attempt.message,
-                    value = challenge.Value
-                }
+                data = new { status = "correct", attempt.message, value = cc.Value }
             });
         }
 
-        // Handle incorrect attempt with rate limit + max attempts validation
+        // Incorrect attempt
         var kpm_limit = _configHelper.GetConfig("incorrect_submissions_per_min", 10);
 
-        // Phase 1: Check KPM with Redis (lightweight, no DB query)
-        var (kpmExceeded, kpmCount) = await CheckAndIncrementKpmAsync(user.Id, kpm_limit);
+        var (kpmExceeded, kpmCount) = await CheckAndIncrementKpmAsync(userId, kpm_limit);
         if (kpmExceeded)
         {
-            _userBehaviorLogger.Log("CHALLENGE_SUBMISSION_RATE_LIMITED", user.Id, user.TeamId, new { challengeId = request.ChallengeId, kpmCount, kpm_limit }, LogLevel.Warning);
+            _userBehaviorLogger.Log("CHALLENGE_SUBMISSION_RATE_LIMITED", userId, teamId, new { contestChallengeId = request.ChallengeId, kpmCount, kpm_limit }, LogLevel.Warning);
             return StatusCode(StatusCodes.Status429TooManyRequests, new
             {
                 success = true,
-                data = new
-                {
-                    status = "ratelimited",
-                    message = $"You're submitting flags too fast. Slow down. ({kpmCount}/{kpm_limit} attempts in last minute)",
-                    cooldown = 0
-                }
+                data = new { status = "ratelimited", message = $"You're submitting flags too fast. Slow down. ({kpmCount}/{kpm_limit} attempts in last minute)", cooldown = 0 }
             });
         }
 
-        var hasMaxAttempts = challenge.MaxAttempts.HasValue && challenge.MaxAttempts.Value > 0;
-
-        // Phase 2: Max attempts validation using Redis Lua script (atomic operation)
+        var hasMaxAttempts = cc.MaxAttempts.HasValue && cc.MaxAttempts.Value > 0;
         if (hasMaxAttempts)
         {
-            var attemptKey = $"attempt_count_{challenge.Id}_{user.TeamId}";
-
-            // Calculate smart sync threshold (1.5x maxAttempts)
-            var smartSyncThreshold = (long)(challenge.MaxAttempts.Value * 1.5);
-
-            // Get actual DB count for smart sync (only used if counter is corrupted)
+            var attemptKey = $"contest:{contestId}:attempt_count_{cc.Id}_{teamId}";
+            var smartSyncThreshold = (long)(cc.MaxAttempts!.Value * 1.5);
             var actualDbCount = await _context.Submissions
                 .AsNoTracking()
-                .Where(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId && s.Type == "incorrect")
+                .Where(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId && s.Type == "incorrect")
                 .CountAsync();
 
-            // Execute Lua script: atomic smart sync + pre-check + INCR + double-check
-            // Returns -1 if exceeded, otherwise returns new count
-            var result = await _redisHelper.CheckAndIncrementAttemptsAsync(
-                attemptKey,
-                challenge.MaxAttempts.Value,
-                smartSyncThreshold,
-                actualDbCount
-            );
-
+            var result = await _redisHelper.CheckAndIncrementAttemptsAsync(attemptKey, cc.MaxAttempts.Value, smartSyncThreshold, actualDbCount);
             if (result == -1)
-            {
-                // Exceeded limit - reject without DB insert
-                return BadRequest(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        status = "incorrect",
-                        message = "You have 0 tries remaining"
-                    }
-                });
-            }
+                return BadRequest(new { success = true, data = new { status = "incorrect", message = "You have 0 tries remaining" } });
 
-            // Within limit - update cached count for response message
             currentFailsPreCheck = (int)result;
         }
 
-        // Save incorrect submission to DB (only if within limit)
-        var summit_fail = new Submission
+        var summitFail = new Submission
         {
-            UserId = user.Id,
-            TeamId = user.TeamId,
-            ChallengeId = challenge.Id,
+            ContestId = contestId,
+            ContestChallengeId = cc.Id,
+            UserId = user?.Id,
+            TeamId = teamId,
             Ip = _userHelper.GetIP(HttpContext),
             Provided = request.Submission,
             Type = Enums.SubmissionTypes.INCORRECT,
         };
-        _context.Submissions.Add(summit_fail);
+        _context.Submissions.Add(summitFail);
         await _context.SaveChangesAsync();
 
         try
         {
             await _actionLogsServices.SaveActionLogs(new ActionLogsReq
             {
-                ActionType = 4, // INCORRECT_FLAG
-                ActionDetail = $"Nộp cờ sai cho thử thách {challenge.Name}",
-                ChallengeId = challenge.Id,
-            }, user.Id);
+                ActionType = 4,
+                ActionDetail = $"Nộp cờ sai cho thử thách {cc.Name ?? bank.Name}",
+                ChallengeId = cc.Id,
+            }, user?.Id ?? userId);
         }
         catch (Exception ex)
         {
-            await Console.Error.WriteLineAsync($"[ActionLog] Failed to save INCORRECT_FLAG log for challenge {challenge.Id}: {ex.Message}");
+            await Console.Error.WriteLineAsync($"[ActionLog] Failed to save INCORRECT_FLAG log for cc {cc.Id}: {ex.Message}");
         }
 
-        var max_tries_check = challenge.MaxAttempts;
-        if (!max_tries_check.HasValue || max_tries_check.Value <= 0)
-        {
-            return Ok(new
-            {
-                success = true,
-                data = new
-                {
-                    status = "incorrect",
-                    attempt.message,
-                    cooldown = challenge.Cooldown ?? 0
-                }
-            });
-        }
+        if (!cc.MaxAttempts.HasValue || cc.MaxAttempts.Value <= 0)
+            return Ok(new { success = true, data = new { status = "incorrect", attempt.message, cooldown = cc.Cooldown ?? 0 } });
 
-        // Calculate remaining attempts (use cached count if available)
         var failsCount = currentFailsPreCheck ?? await _context.Submissions
-            .Where(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId && s.Type == "incorrect")
+            .Where(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId && s.Type == "incorrect")
             .CountAsync();
-        var attemptsLeft = max_tries_check.Value - failsCount;
+        var attemptsLeft = cc.MaxAttempts!.Value - failsCount;
         var triesStr = attemptsLeft == 1 ? "try" : "tries";
         var message = attempt.message;
+        if (!string.IsNullOrEmpty(message) && !"!().;?[]{}".Contains(message[^1])) message += ".";
 
-        if (!string.IsNullOrEmpty(message) && !"!().;?[]{}".Contains(message[^1]))
+        if (attemptsLeft <= 0 && cc.RequireDeploy && await _redisHelper.KeyExistsAsync(deploymentKey))
         {
-            message += ".";
-        }
-
-        // Auto stop challenge if no attempts left
-        if (attemptsLeft <= 0 && challenge.RequireDeploy && await _redisHelper.KeyExistsAsync(deploymentKey))
-        {
-            try
-            {
-                await _challengeServices.ForceStopChallenge(challenge.Id, user);
-            }
-            catch (Exception ex)
-            {
-                await Console.Error.WriteLineAsync($"Error stopping challenge {challenge.Id} for team {user.TeamId}: {ex.Message}");
-            }
+            try { await _challengeServices.ForceStopChallenge(cc.Id, teamId, user!, contestId); }
+            catch (Exception ex) { await Console.Error.WriteLineAsync($"Error stopping cc {cc.Id} for team {teamId}: {ex.Message}"); }
         }
 
         return Ok(new
         {
             success = true,
-            data = new
-            {
-                status = "incorrect",
-                message = $"{message} You have {attemptsLeft} {triesStr} remaining.",
-                cooldown = challenge.Cooldown ?? 0
-            }
+            data = new { status = "incorrect", message = $"{message} You have {attemptsLeft} {triesStr} remaining.", cooldown = cc.Cooldown ?? 0 }
         });
     }
-
 
     [HttpPost("start")]
     [DuringCtfTimeOnly]
     public async Task<IActionResult> StartChallenge([FromBody] ChallengeStartStopReqDTO challengeStartReq)
     {
-
         var userId = UserContext.UserId;
+        var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
+
         var user = await _context.Users
             .AsNoTracking()
-            .Include(u => u.Team)
             .FirstOrDefaultAsync(u => u.Id == userId);
-        if (user?.Team == null || user.TeamId == null)
+        if (user == null) return NotFound(new { error = "User not found" });
+
+        if (teamId == 0)
             return NotFound(new { error = "Team not found" });
 
-        _userBehaviorLogger.Log("START_CHALLENGE", user.Id, user.TeamId, new { challengeId = challengeStartReq.challengeId });
-        var challenge = await _context.Challenges
+        _userBehaviorLogger.Log("START_CHALLENGE", userId, teamId, new { contestChallengeId = challengeStartReq.challengeId });
+
+        // challengeId from client = contestChallengeId
+        var cc = await _context.ContestsChallenges
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == challengeStartReq.challengeId);
+            .Include(c => c.BankChallenge)
+            .FirstOrDefaultAsync(c => c.Id == challengeStartReq.challengeId && c.ContestId == contestId);
 
-        if (challenge == null) return NotFound(new { error = "Challenge not found" });
-        if (!challenge.RequireDeploy) return BadRequest(new { error = "This challenge does not require deploy" });
-        if (challenge.State == ChallengeState.HIDDEN || challenge.SharedInstant == true) return BadRequest(new { error = "This challenge is not available for deployment" });
+        if (cc == null || cc.BankChallenge == null)
+            return NotFound(new { error = "Challenge not found" });
 
-        // Check prerequisites from Requirements JSON
-        if (!string.IsNullOrEmpty(challenge.Requirements))
+        var bank = cc.BankChallenge;
+
+        if (!cc.RequireDeploy) return BadRequest(new { error = "This challenge does not require deploy" });
+        if (cc.State == "hidden" || bank.SharedInstant == true) return BadRequest(new { error = "This challenge is not available for deployment" });
+
+        // Prerequisite check
+        if (!string.IsNullOrEmpty(bank.Requirements))
         {
             try
             {
-                var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(challenge.Requirements);
-
+                var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(bank.Requirements);
                 if (requirementsObj?.prerequisites != null && requirementsObj.prerequisites.Count > 0)
                 {
-                    var solve_ids = (await _context.Solves
-                                    .AsNoTracking()
-                                    .Where(s => s.TeamId == user.TeamId)
-                                    .Select(s => s.ChallengeId)
-                                    .OrderBy(id => id)
-                                    .ToListAsync()).ToHashSet();
+                    var solvedBankIds = (await _context.Solves
+                        .AsNoTracking()
+                        .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                        .Select(s => s.ContestChallenge.BankId!.Value)
+                        .ToListAsync()).ToHashSet();
 
-                    var all_challenge_ids = (await _context.Challenges
-                                            .AsNoTracking()
-                                            .Select(c => c.Id)
-                                            .ToListAsync()).ToHashSet();
+                    var allBankIds = (await _context.ContestsChallenges
+                        .AsNoTracking()
+                        .Where(c => c.ContestId == contestId && c.BankId.HasValue)
+                        .Select(c => c.BankId!.Value)
+                        .ToListAsync()).ToHashSet();
 
-                    // Convert prereq ids to nullable ints to match solve_ids (IEnumerable<int?>)
-                    var prereqs = requirementsObj.prerequisites
-                                        .Where(id => all_challenge_ids.Contains(id))
-                                        .Select(id => (int?)id)
-                                        .ToHashSet();
-
-                    if (!solve_ids.IsSupersetOf(prereqs))
-                    {
+                    var prereqs = requirementsObj.prerequisites.Where(allBankIds.Contains).ToHashSet();
+                    if (!solvedBankIds.IsSupersetOf(prereqs))
                         return StatusCode(StatusCodes.Status403Forbidden, new
                         {
                             error = "You don't have the permission to start this challenge. Please complete the required challenges first."
                         });
-                    }
                 }
             }
             catch (Exception ex)
             {
-                await Console.Error.WriteLineAsync($"Error parsing requirements for challenge {challenge.Id}: {ex.Message}");
+                await Console.Error.WriteLineAsync($"Error parsing requirements for cc {cc.Id}: {ex.Message}");
             }
         }
 
-        if (challenge.MaxAttempts.HasValue && challenge.MaxAttempts.Value > 0)
+        if (cc.MaxAttempts.HasValue && cc.MaxAttempts.Value > 0)
         {
-            var incorrectSubmissionCount = await _context.Submissions
+            var incorrectCount = await _context.Submissions
                 .AsNoTracking()
-                .Where(s => s.ChallengeId == challenge.Id
-                    && s.TeamId == user.TeamId
-                    && s.Type == SubmissionTypes.INCORRECT)
+                .Where(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId && s.Type == SubmissionTypes.INCORRECT)
                 .CountAsync();
-
-            if (incorrectSubmissionCount >= challenge.MaxAttempts.Value)
-            {
-                return BadRequest(new
-                {
-                    error = "You have 0 tries remaining. You cannot start this challenge."
-                });
-            }
+            if (incorrectCount >= cc.MaxAttempts.Value)
+                return BadRequest(new { error = "You have 0 tries remaining. You cannot start this challenge." });
         }
 
-        if (challenge.MaxDeployCount.HasValue && challenge.MaxDeployCount.Value > 0)
+        if (cc.MaxDeployCount.HasValue && cc.MaxDeployCount.Value > 0)
         {
             var currentDeployCount = await _context.ChallengeStartTrackings
                 .AsNoTracking()
-                .Where(d => d.ChallengeId == challenge.Id && d.TeamId == user.TeamId)
+                .Where(d => d.ContestChallengeId == cc.Id && d.TeamId == teamId)
                 .CountAsync();
-            if (currentDeployCount >= challenge.MaxDeployCount.Value)
-            {
-                return BadRequest(new
-                {
-                    error = "You have reached the maximum number of deployments for this challenge. You cannot start this challenge."
-                });
-            }
+            if (currentDeployCount >= cc.MaxDeployCount.Value)
+                return BadRequest(new { error = "You have reached the maximum number of deployments for this challenge." });
         }
 
         var solve = await _context.Solves
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId);
+            .FirstOrDefaultAsync(s => s.ContestChallengeId == cc.Id && s.TeamId == teamId);
         if (solve != null)
-        {
             return BadRequest(new { error = "Your team has already solved this challenge. You cannot start this challenge." });
-        }
 
-        // Check captain_only_start_challenge config (stored as "1" or "0" in database)
         var captainOnlyStart = _configHelper.GetConfig("captain_only_start_challenge", true);
-        if (captainOnlyStart && user.Id != user.Team.CaptainId)
+        if (captainOnlyStart)
         {
-            return BadRequest(new { error = "Contact the organizers to select a team captain. Only the team captain has the permission to start the challenge." });
+            var captainId = await _context.Teams
+                .AsNoTracking()
+                .Where(t => t.Id == teamId)
+                .Select(t => t.CaptainId)
+                .FirstOrDefaultAsync();
+            if (captainId.HasValue && captainId.Value != userId)
+                return BadRequest(new { error = "Contact the organizers to select a team captain. Only the team captain has the permission to start the challenge." });
         }
 
-        await Console.Out.WriteLineAsync($"[Requesst Start Challenge] User {userId} : Team {user.TeamId} : Challenge {challenge.Name}");
+        await Console.Out.WriteLineAsync($"[Start Challenge] User {userId} : Team {teamId} : Challenge {cc.Name ?? bank.Name}");
 
-        // Check limit_challenges - maximum concurrent challenges per team
-        var limit_challenges = _configHelper.LimitChallenges();
-
-        var deploymentKey = ChallengeHelper.GetCacheKey(challengeStartReq.challengeId, user.TeamId.Value);
-        var teamIdStr = user.TeamId.Value.ToString();
-        var challengeIdStr = challenge.Id.ToString();
+        var limitChallenges = _configHelper.LimitChallenges();
+        var deploymentKey = ChallengeHelper.GetCacheKey(contestId, cc.Id, teamId);
+        var teamIdStr = teamId.ToString();
+        var ccIdStr = cc.Id.ToString();
         var cacheDto = new ChallengeDeploymentCacheDTO
         {
-            challenge_id = challenge.Id,
-            team_id = user.TeamId.Value,
+            challenge_id = cc.Id,
+            contest_id = contestId,
+            team_id = teamId,
             status = DeploymentStatus.INITIAL,
-            user_id = user.Id,
+            user_id = userId,
         };
         string deploymentValue = System.Text.Json.JsonSerializer.Serialize(cacheDto);
 
         DeploymentCheckResult redisResult = await _redisHelper.AtomicCheckAndCreateDeploymentZSet(
-                            teamId: teamIdStr,
-                            deploymentKey: deploymentKey,
-                            challengeId: challengeIdStr,
-                            maxLimit: limit_challenges,
-                            deploymentValue: deploymentValue,
-                            provisioningTtl: 300
-                        );
+            teamId: teamIdStr,
+            deploymentKey: deploymentKey,
+            challengeId: ccIdStr,
+            maxLimit: limitChallenges,
+            deploymentValue: deploymentValue,
+            provisioningTtl: 300,
+            contestId: contestId);
 
         switch (redisResult)
         {
             case DeploymentCheckResult.LimitExceeded:
-                await Console.Out.WriteLineAsync($" Team {user.TeamId} had limit exceeded from challenge {challenge.Name}");
-                return BadRequest(new { error = $"You have reached the maximum limit of {limit_challenges} concurrent challenges." });
+                await Console.Out.WriteLineAsync($"Team {teamId} hit concurrent limit on cc {cc.Id}");
+                return BadRequest(new { error = $"You have reached the maximum limit of {limitChallenges} concurrent challenges." });
             case DeploymentCheckResult.AlreadyExists:
-                await Console.Out.WriteLineAsync($" Team {user.TeamId} had already deploy from challenge {challenge.Name}");
+                await Console.Out.WriteLineAsync($"Team {teamId} already has cc {cc.Id} deployed");
                 var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey) ?? new ChallengeDeploymentCacheDTO();
-
                 switch (deploymentCache.status)
                 {
                     case DeploymentStatus.INITIAL:
                         return BadRequest(new { error = "Your previous challenge deployment is still in progress. Please wait until it is completed before starting a new one." });
                     case DeploymentStatus.PENDING:
-                        return Ok(new ChallengeDeployResponeDTO
-                        {
-                            status = (int)HttpStatusCode.OK,
-                            success = true,
-                            message = "Challenge is deploying.",
-                        });
+                        return Ok(new ChallengeDeployResponeDTO { status = (int)HttpStatusCode.OK, success = true, message = "Challenge is deploying." });
                     case DeploymentStatus.DELETING:
                         return BadRequest(new { error = "Challenge is being deleted. Please wait a moment before starting again." });
                     case DeploymentStatus.RUNING:
                         int timeLeft = 0;
                         if (deploymentCache.time_finished > 0)
                         {
-                            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-                            long remainSec = deploymentCache.time_finished - now;
+                            long remainSec = deploymentCache.time_finished - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                             if (remainSec < 0) remainSec = 0;
-
                             timeLeft = (int)(remainSec / 60);
                         }
-                        return Ok(new ChallengeDeployResponeDTO
-                        {
-                            status = (int)HttpStatusCode.OK,
-                            success = true,
-                            message = "Challenge is running.",
-                            challenge_url = deploymentCache.challenge_url,
-                            time_limit = timeLeft,
-                        });
+                        return Ok(new ChallengeDeployResponeDTO { status = (int)HttpStatusCode.OK, success = true, message = "Challenge is running.", challenge_url = deploymentCache.challenge_url, time_limit = timeLeft });
                     default:
                         return BadRequest(new { error = "You have already started this challenge." });
                 }
@@ -873,12 +652,11 @@ public class ChallengeController : BaseController
 
         try
         {
-            var response = await _challengeServices.ChallengeStart(challenge, user);
+            var response = await _challengeServices.ChallengeStart(cc, bank, user, teamId, contestId);
             if (response.status != (int)HttpStatusCode.OK)
             {
-                // >>> ROLLBACK: Xóa ngay slot vừa chiếm trong Redis <<<
-                await Console.Error.WriteLineAsync($"[Rollback] Team {user.TeamId} start challenge failed: {response.message}.");
-                await _redisHelper.AtomicRemoveDeploymentZSet(teamIdStr, deploymentKey, challengeIdStr);
+                await Console.Error.WriteLineAsync($"[Rollback] Team {teamId} start cc failed: {response.message}.");
+                await _redisHelper.AtomicRemoveDeploymentZSet(teamIdStr, deploymentKey, ccIdStr, contestId);
             }
             else
             {
@@ -886,14 +664,14 @@ public class ChallengeController : BaseController
                 {
                     await _actionLogsServices.SaveActionLogs(new ActionLogsReq
                     {
-                        ActionType = 2, // START_CHALLENGE
-                        ActionDetail = $"Khởi động thử thách {challenge.Name}",
-                        ChallengeId = challenge.Id,
-                    }, user.Id);
+                        ActionType = 2,
+                        ActionDetail = $"Khởi động thử thách {cc.Name ?? bank.Name}",
+                        ChallengeId = cc.Id,
+                    }, userId);
                 }
                 catch (Exception ex)
                 {
-                    await Console.Error.WriteLineAsync($"[ActionLog] Failed to save START_CHALLENGE log for challenge {challenge.Id}: {ex.Message}");
+                    await Console.Error.WriteLineAsync($"[ActionLog] Failed to save START_CHALLENGE log for cc {cc.Id}: {ex.Message}");
                 }
             }
             return response.status switch
@@ -907,12 +685,8 @@ public class ChallengeController : BaseController
         catch (Exception e)
         {
             await Console.Error.WriteLineAsync($"[Rollback] Exception during start challenge: {e.Message}. Reverting Redis for {deploymentKey}");
-            await _redisHelper.AtomicRemoveDeploymentZSet(teamIdStr, deploymentKey, challengeIdStr);
-            return BadRequest(new
-            {
-                error = "Failed to connect to start API",
-                error_detail = e.ToString(),
-            });
+            await _redisHelper.AtomicRemoveDeploymentZSet(teamIdStr, deploymentKey, ccIdStr, contestId);
+            return BadRequest(new { error = "Failed to connect to start API", error_detail = e.ToString() });
         }
     }
 
@@ -924,30 +698,31 @@ public class ChallengeController : BaseController
             return BadRequest(new { error = "ChallengeId is required" });
 
         var userId = UserContext.UserId;
+        var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
+
         var user = await _context.Users
-            .Include(u => u.Team)
             .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Id == userId);
-        if (user?.TeamId == null || user.Team == null)
+        if (teamId == 0)
             return BadRequest(new { error = "User no join team" });
 
-        _userBehaviorLogger.Log("STOP_CHALLENGE", user.Id, user.TeamId, new { challengeStartReq.challengeId });
+        _userBehaviorLogger.Log("STOP_CHALLENGE", userId, teamId, new { challengeStartReq.challengeId });
 
-        var challenge = await _context.Challenges
+        var cc = await _context.ContestsChallenges
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == challengeStartReq.challengeId);
+            .FirstOrDefaultAsync(c => c.Id == challengeStartReq.challengeId && c.ContestId == contestId);
 
-        if (challenge == null) return BadRequest(new { error = "Challenge not found" });
-        var cache_key = ChallengeHelper.GetCacheKey(challenge.Id, user.TeamId.Value);
+        if (cc == null) return BadRequest(new { error = "Challenge not found" });
 
-        if (!await _redisHelper.KeyExistsAsync(cache_key))
+        var cacheKey = ChallengeHelper.GetCacheKey(contestId, cc.Id, teamId);
+        if (!await _redisHelper.KeyExistsAsync(cacheKey))
             return BadRequest(new { error = "Challenge not started or already stopped, no active cache found." });
 
         try
         {
-            await Console.Out.WriteLineAsync($"[Requesst Stop Challenge] User {userId} : Team {user.TeamId} : Challenge {challenge.Name}");
-
-            var response = await _challengeServices.ForceStopChallenge(challenge.Id, user);
+            await Console.Out.WriteLineAsync($"[Stop Challenge] User {userId} : Team {teamId} : Challenge {cc.Id}");
+            var response = await _challengeServices.ForceStopChallenge(cc.Id, teamId, user!, contestId);
             return response.status switch
             {
                 (int)HttpStatusCode.OK => Ok(response),
@@ -959,11 +734,7 @@ public class ChallengeController : BaseController
         catch (HttpRequestException e)
         {
             await Console.Error.WriteLineAsync($"Error during stop challenge: {e.Message}");
-            return BadRequest(new
-            {
-                error = "Failed to connect to stop API",
-                error_detail = e.ToString(),
-            });
+            return BadRequest(new { error = "Failed to connect to stop API", error_detail = e.ToString() });
         }
     }
 
@@ -972,7 +743,6 @@ public class ChallengeController : BaseController
     public async Task<IActionResult> CheckChallengeStatus([FromBody] ChallengCheckStatusReqDTO statusReq)
     {
         if (statusReq == null || statusReq.challengeId <= 0)
-        {
             return BadRequest(new ChallengeDeployResponeDTO
             {
                 success = false,
@@ -980,14 +750,12 @@ public class ChallengeController : BaseController
                 status = (int)HttpStatusCode.BadRequest,
                 pod_status = Enums.DeploymentStatusEnum.Failed
             });
-        }
+
         var userId = UserContext.UserId;
-        var user = await _context.Users
-            .Include(u => u.Team)
-            .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Id == userId);
-        if (user?.TeamId == null || user.Team == null)
-        {
+        var teamId = UserContext.TeamId;
+        var contestId = UserContext.ContestId;
+
+        if (teamId == 0)
             return BadRequest(new ChallengeDeployResponeDTO
             {
                 success = false,
@@ -995,25 +763,26 @@ public class ChallengeController : BaseController
                 status = (int)HttpStatusCode.BadRequest,
                 pod_status = Enums.DeploymentStatusEnum.Failed
             });
-        }
 
-        var challenge = await _context.Challenges
+        var cc = await _context.ContestsChallenges
             .AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Id == statusReq.challengeId);
+            .Include(c => c.BankChallenge)
+            .FirstOrDefaultAsync(c => c.Id == statusReq.challengeId && c.ContestId == contestId);
 
-        if (challenge == null) return BadRequest(new ChallengeDeployResponeDTO
-        {
-            success = false,
-            message = "Challenge not found",
-            status = (int)HttpStatusCode.BadRequest,
-            pod_status = Enums.DeploymentStatusEnum.Failed
-        });
-        int teamId = user.TeamId.Value;
-        if (challenge.SharedInstant)
-        {
-            teamId = -2; // Use -2 to indicate shared instance in cache keys and service logic
-        }
-        var response = await _challengeServices.CheckChallengeStart(challenge.Id, teamId);
+        if (cc == null)
+            return BadRequest(new ChallengeDeployResponeDTO
+            {
+                success = false,
+                message = "Challenge not found",
+                status = (int)HttpStatusCode.BadRequest,
+                pod_status = Enums.DeploymentStatusEnum.Failed
+            });
+
+        int effectiveTeamId = teamId;
+        if (cc.BankChallenge?.SharedInstant == true)
+            effectiveTeamId = -2;
+
+        var response = await _challengeServices.CheckChallengeStart(cc.Id, effectiveTeamId, contestId);
         return response.status switch
         {
             (int)HttpStatusCode.OK => Ok(response),

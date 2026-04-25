@@ -484,7 +484,6 @@ public class AuthService : IAuthService
                 Verified = false,
                 Hidden = false,
                 Banned = false,
-                TeamId = null,
                 Created = DateTime.UtcNow,
             };
 
@@ -573,9 +572,7 @@ public class AuthService : IAuthService
                 return BaseResponseDTO<AuthResponseDTO>.Fail("Captcha validation failed");
             }
 
-            // load tracked entity so we can update password if we migrate hash format
             var user = await _context.Users
-                .Include(t => t.Team)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(u => u.Name == loginDto.username);
 
@@ -584,50 +581,48 @@ public class AuthService : IAuthService
                 ? _dummyPasswordHash
                 : user.Password;
             var passwordValid = SHA256Helper.VerifyPassword(loginDto.password, passwordHashToVerify);
-            
+
             if (user == null || user.Type != "user")
             {
                 return BaseResponseDTO<AuthResponseDTO>.Fail("Invalid username or password");
             }
 
-            if(user.Verified == false)
+            if (user.Verified == false)
             {
                 return BaseResponseDTO<AuthResponseDTO>.Fail("Your account is not verified yet");
             }
 
-            if (!passwordValid || user.Type != "user")
+            if (!passwordValid)
             {
                 return BaseResponseDTO<AuthResponseDTO>.Fail("Invalid username or password");
             }
+
             if ((user.Hidden ?? false) || (user.Banned ?? false))
             {
                 return BaseResponseDTO<AuthResponseDTO>.Fail("Your account is not allowed");
             }
-            if (user.Team == null)
-            {
-                return BaseResponseDTO<AuthResponseDTO>.Fail("You don't have a team yet");
-            }
-            if (user.Team != null && (user.Team.Banned ?? false))
-            {
-                return BaseResponseDTO<AuthResponseDTO>.Fail("Your team has been banned");
-            }
-            var dateTime = DateTime.Now.AddDays(1);
-            var jwt = await _tokenHelper.GenerateUserToken(user, dateTime, "Login token");
 
-            // Kiểm tra xem user đã có tracking với IP này chưa
+            // Generate temporary token without contestId (contestId = 0, teamId = 0)
+            var dateTime = DateTime.Now.AddDays(1);
+            var jwt = await _tokenHelper.GenerateUserToken(
+                user,
+                contestId: 0, // Temporary token without contest
+                contestTeamId: 0,
+                expiration: dateTime,
+                description: "Initial login token - no contest selected");
+
+            // Track login
             var userIp = _userHelper.GetIP(_httpContextAccessor.HttpContext!);
             var existingTracking = await _context.Trackings
                 .FirstOrDefaultAsync(t => t.UserId == user.Id && t.Ip == userIp);
 
             if (existingTracking != null)
             {
-                // Update date nếu đã có
                 existingTracking.Date = DateTime.Now;
                 _context.Trackings.Update(existingTracking);
             }
             else
             {
-                // Tạo tracking mới
                 var tracking = new Tracking
                 {
                     Type = null,
@@ -640,29 +635,14 @@ public class AuthService : IAuthService
 
             await _context.SaveChangesAsync();
 
-            // Invalidate cached auth info for this user so middleware reads fresh token UUID
-            try
-            {
-                var cacheKey = $"auth:user:{user.Id}";
-                _ = await _redisHelper.RemoveCacheAsync(cacheKey);
-            }
-            catch
-            {
-                // ignore cache errors
-            }
-
             var authResponse = new AuthResponseDTO
             {
                 id = user.Id,
                 username = user.Name ?? string.Empty,
                 email = user.Email ?? string.Empty,
-                team = user.Team == null
-                    ? null
-                    : new TeamResponse
-                    {
-                        id = user.Team.Id,
-                        teamName = user.Team.Name ?? string.Empty
-                    },
+                type = user.Type ?? "user",
+                contestId = 0, // No contest selected yet
+                team = null, // No team yet
                 token = jwt
             };
 
@@ -767,5 +747,109 @@ public class AuthService : IAuthService
             _logger.LogError(ex, userId);
             return BaseResponseDTO<string>.Fail("An error occurred during logout");
         }
+    }
+
+    public async Task<BaseResponseDTO<SelectContestResponseDTO>> SelectContest(int userId, SelectContestDTO dto)
+    {
+        try
+        {
+            if (dto.ContestId <= 0)
+            {
+                return BaseResponseDTO<SelectContestResponseDTO>.Fail("Invalid contest ID");
+            }
+
+            var user = await _context.Users
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+            {
+                return BaseResponseDTO<SelectContestResponseDTO>.Fail("User not found");
+            }
+
+            // Check if contest exists
+            var contest = await _context.Contests
+                .AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == dto.ContestId);
+
+            if (contest == null)
+            {
+                return BaseResponseDTO<SelectContestResponseDTO>.Fail("Contest not found");
+            }
+
+            // Check if user is participant of this contest
+            var participant = await _context.ContestParticipants
+                .AsNoTracking()
+                .Include(p => p.Team)
+                .FirstOrDefaultAsync(p => p.ContestId == dto.ContestId && p.UserId == userId);
+
+            if (participant == null)
+            {
+                return BaseResponseDTO<SelectContestResponseDTO>.Fail("You are not registered for this contest");
+            }
+
+            // Get teamId from ContestParticipants (scoped to contest)
+            var contestTeamId = participant.TeamId ?? 0;
+            var contestTeam = participant.Team;
+
+            if (contestTeam != null && (contestTeam.Banned ?? false))
+            {
+                return BaseResponseDTO<SelectContestResponseDTO>.Fail("Your team has been banned from this contest");
+            }
+
+            // Generate new JWT token with contestId
+            var dateTime = DateTime.Now.AddDays(7); // 7 days expiration
+            var jwt = await _tokenHelper.GenerateUserToken(
+                user,
+                contestId: dto.ContestId,
+                contestTeamId: contestTeamId,
+                expiration: dateTime,
+                description: $"Contest token for contest {dto.ContestId}");
+
+            // Invalidate cached auth info for this contest
+            try
+            {
+                var cacheKey = $"contest:{dto.ContestId}:auth:user:{userId}";
+                _ = await _redisHelper.RemoveCacheAsync(cacheKey);
+            }
+            catch
+            {
+                // ignore cache errors
+            }
+
+            _logger.Log("SELECT_CONTEST", userId, contestTeamId, new { contestId = dto.ContestId, contestName = contest.Name });
+
+            var response = new SelectContestResponseDTO
+            {
+                Token = jwt,
+                ContestId = dto.ContestId,
+                ContestName = contest.Name,
+                TeamId = contestTeamId > 0 ? contestTeamId : null,
+                TeamName = contestTeam?.Name
+            };
+
+            return BaseResponseDTO<SelectContestResponseDTO>.Ok(response, "Contest selected successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, userId, null, new { action = "SelectContest", contestId = dto.ContestId });
+            return BaseResponseDTO<SelectContestResponseDTO>.Fail("Failed to select contest");
+        }
+    }
+
+    /// <summary>
+    /// Generate JWT token with contestId
+    /// </summary>
+    public string GenerateJwtToken(int userId, string username, string email, string userType, int contestId, int? teamId)
+    {
+        var authInfo = new AuthInfo
+        {
+            userId = userId,
+            teamId = teamId ?? 0,
+            contestId = contestId
+        };
+
+        var tokenUuid = Guid.NewGuid().ToString();
+        return _tokenHelper.CreateToken(authInfo, tokenUuid, expireMinutes: 60 * 24 * 7); // 7 days
     }
 }
