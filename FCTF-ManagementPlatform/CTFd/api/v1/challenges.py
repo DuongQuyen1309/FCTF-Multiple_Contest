@@ -819,6 +819,7 @@ class ChallengeAttempt(Resource):
         challenge_id = request_data.get("challengeId") or request_data.get(
             "challenge_id"
         )
+        contest_id = request_data.get("contestId") or request_data.get("contest_id")
 
         # Kiểm tra nếu dữ liệu cache không tồn tại
         token = Tokens.query.filter_by(value=auth_header).first()
@@ -899,14 +900,14 @@ class ChallengeAttempt(Resource):
         # Cooldown check
         cooldown_seconds = challenge.cooldown or 0
         if cooldown_seconds > 0:
-            cooldown_key = f"submission_cooldown_{challenge_id}_{team_id}"
+            cooldown_key = f"contest:{contest_id}:submission_cooldown_{challenge_id}_{team_id}"
             last_submission_time = redis_client.get(cooldown_key)
-            
+
             if last_submission_time:
                 last_submission_time = float(last_submission_time)
                 current_time = time.time()
                 time_elapsed = current_time - last_submission_time
-                
+
                 if time_elapsed < cooldown_seconds:
                     remaining_cooldown = int(cooldown_seconds - time_elapsed)
                     return (
@@ -919,7 +920,7 @@ class ChallengeAttempt(Resource):
                         },
                         429,
                     )
-            
+
             redis_client.set(cooldown_key, str(time.time()))
         
         # TODO: Convert this into a re-useable decorator

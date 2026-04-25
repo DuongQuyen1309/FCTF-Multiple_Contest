@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useToast } from '../hooks/useToast';
@@ -24,6 +24,7 @@ import {
   SupportAgent,
   ViewList,
   History,
+  ArrowBack,
 } from '@mui/icons-material';
 import type { ReactNode } from 'react';
 
@@ -44,6 +45,7 @@ export function Layout({ children }: LayoutProps) {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+  const { contestId } = useParams<{ contestId: string }>();
   const toast = useToast();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [timeLeft, setTimeLeft] = useState<TimeLeft | null>(null);
@@ -51,12 +53,16 @@ export function Layout({ children }: LayoutProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [smallIconUrl, setSmallIconUrl] = useState<string | null>(null);
 
+  // Check if we're in a contest context
+  const isInContest = !!contestId;
+  const contestPrefix = isInContest ? `/contest/${contestId}` : '';
+
   const tabs = [
-    { label: 'Challenges', path: '/challenges', icon: <Security fontSize="small" /> },
-    { label: 'Instances', path: '/instances', icon: <ViewList fontSize="small" /> },
-    { label: 'Scoreboard', path: '/scoreboard', icon: <EmojiEvents fontSize="small" /> },
-    { label: 'Action Logs', path: '/action-logs', icon: <History fontSize="small" /> },
-    { label: 'Tickets', path: '/tickets', icon: <SupportAgent fontSize="small" /> },
+    { label: 'Challenges', path: `${contestPrefix}/challenges`, icon: <Security fontSize="small" /> },
+    { label: 'Instances', path: `${contestPrefix}/instances`, icon: <ViewList fontSize="small" /> },
+    { label: 'Scoreboard', path: `${contestPrefix}/scoreboard`, icon: <EmojiEvents fontSize="small" /> },
+    { label: 'Action Logs', path: `${contestPrefix}/action-logs`, icon: <History fontSize="small" /> },
+    { label: 'Tickets', path: `${contestPrefix}/tickets`, icon: <SupportAgent fontSize="small" /> },
   ];
 
   useEffect(() => {
@@ -191,7 +197,7 @@ export function Layout({ children }: LayoutProps) {
             {/* Logo */}
             <Box
               className="flex items-center gap-2 cursor-pointer"
-              onClick={() => navigate('/challenges')}
+              onClick={() => navigate(isInContest ? '/contests' : '/contests')}
             >
               <img
                 src={logoUrl || '/assets/fctf-logo.png'}
@@ -199,6 +205,23 @@ export function Layout({ children }: LayoutProps) {
                 className="w-10 h-10 object-contain"
               />
             </Box>
+
+            {/* Back to Contests button when in contest */}
+            {isInContest && (
+              <IconButton
+                onClick={() => navigate('/contests')}
+                sx={{
+                  ml: 2,
+                  color: theme === 'dark' ? 'rgb(156, 163, 175)' : 'rgb(107, 114, 128)',
+                  '&:hover': {
+                    color: theme === 'dark' ? 'rgb(255, 255, 255)' : 'rgb(31, 41, 55)',
+                  },
+                }}
+                title="Back to Contests"
+              >
+                <ArrowBack />
+              </IconButton>
+            )}
 
             {/* Navigation Tabs */}
             <Box className="flex-1 flex items-center gap-2 ml-8">

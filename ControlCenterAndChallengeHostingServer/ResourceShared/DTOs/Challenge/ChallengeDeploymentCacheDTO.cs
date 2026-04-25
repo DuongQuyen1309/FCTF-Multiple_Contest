@@ -8,7 +8,9 @@ namespace ResourceShared.DTOs.Challenge
 {
     public class ChallengeDeploymentCacheDTO
     {
+        /// <summary>Stores contestChallengeId (contests_challenges.id), NOT bank challenge ID.</summary>
         public int challenge_id { get; set; }
+        public int contest_id { get; set; }
         public int user_id { get; set; }
         public int team_id { get; set; }
         public string? _namespace { get; set; } = string.Empty;
