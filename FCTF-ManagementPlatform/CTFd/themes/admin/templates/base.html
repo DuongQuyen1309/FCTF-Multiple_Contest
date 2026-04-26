@@ -1039,15 +1039,11 @@
         <div class="d-flex flex-column w-100">
             <ul class="list-unstyled components">
 
-                {# ══════════════════════════════════════════════════════════
-                GLOBAL NAV — shown when NOT in a contest context
-                ══════════════════════════════════════════════════════════ #}
-                {% set _contest = current_contest if current_contest is defined else (contest if contest is defined else
-                none) %}
-
-                {% if not _contest %}
-
-                {% if is_admin() %}
+                <li class="nav-item mb-2">
+                    <a class="nav-link" href="{{ url_for('admin.global_home') }}" style="background-color: var(--primary-orange); color: white;">
+                        <i class="bx bx-arrow-back"></i> Back to Global Admin
+                    </a>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('admin.statistics') }}">
                         <i class="bx bx-bar-chart-alt-2"></i> Dashboard
