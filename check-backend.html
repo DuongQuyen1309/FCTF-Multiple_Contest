@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm Tra Backend</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status-box {
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .status-box.checking {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            color: #856404;
+        }
+
+        .status-box.online {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+        }
+
+        .status-box.offline {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+
+        .status-box h2 {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .status-box p {
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .endpoints {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .endpoints h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .endpoint-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #dee2e6;
+        }
+
+        .endpoint-item .url {
+            color: #667eea;
+            font-weight: 600;
+            font-size: 14px;
+            flex: 1;
+        }
+
+        .endpoint-item .status {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .endpoint-item .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .endpoint-item .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .endpoint-item .status.checking {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .instructions {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 4px;
+        }
+
+        .instructions h4 {
+            color: #1976D2;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #555;
+            font-size: 13px;
+        }
+
+        .instructions li {
+            margin-bottom: 8px;
+        }
+
+        .instructions code {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Kiểm Tra Backend</h1>
+        <p class="subtitle">Kiểm tra xem backend có đang chạy không</p>
+
+        <div id="mainStatus" class="status-box checking">
+            <h2><span class="spinner"></span>Đang kiểm tra...</h2>
+            <p>Vui lòng đợi trong giây lát</p>
+        </div>
+
+        <div class="endpoints">
+            <h3>📡 Endpoints</h3>
+            <div class="endpoint-item">
+                <span class="url">http://localhost:5069/api/health</span>
+                <span id="health-status" class="status checking">Checking...</span>
+            </div>
+            <div class="endpoint-item">
+                <span class="url">http://localhost:5069/swagger</span>
+                <span id="swagger-status" class="status checking">Checking...</span>
+            </div>
+            <div class="endpoint-item">
+                <span class="url">http://localhost:5069/api/auth/login-contestant</span>
+                <span id="login-status" class="status checking">Checking...</span>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-primary" onclick="checkBackend()">🔄 Kiểm Tra Lại</button>
+            <button class="btn btn-secondary" onclick="openSwagger()">📖 Mở Swagger</button>
+            <button class="btn btn-primary" onclick="openTestLogin()">🔐 Test Login</button>
+            <button class="btn btn-secondary" onclick="openTestScreens()">🎯 Test Screens</button>
+        </div>
+
+        <div class="instructions">
+            <h4>📋 Nếu Backend Chưa Chạy:</h4>
+            <ol>
+                <li>Mở PowerShell hoặc Command Prompt</li>
+                <li>Chạy lệnh: <code>.\start-backend.bat</code> hoặc <code>.\start-backend.ps1</code></li>
+                <li>Hoặc chạy thủ công:
+                    <br><code>cd ControlCenterAndChallengeHostingServer\ContestantBE</code>
+                    <br><code>dotnet run --launch-profile http</code>
+                </li>
+                <li>Đợi backend khởi động (khoảng 10-30 giây)</li>
+                <li>Click "Kiểm Tra Lại" ở trên</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:5069';
+
+        async function checkEndpoint(url, statusElementId) {
+            const statusElement = document.getElementById(statusElementId);
+            statusElement.className = 'status checking';
+            statusElement.textContent = 'Checking...';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    mode: 'cors',
+                });
+
+                if (response.ok) {
+                    statusElement.className = 'status success';
+                    statusElement.textContent = '✅ Online';
+                    return true;
+                } else {
+                    statusElement.className = 'status error';
+                    statusElement.textContent = `❌ Error ${response.status}`;
+                    return false;
+                }
+            } catch (error) {
+                statusElement.className = 'status error';
+                statusElement.textContent = '❌ Offline';
+                return false;
+            }
+        }
+
+        async function checkBackend() {
+            console.log('🔍 Checking backend status...');
+
+            const mainStatus = document.getElementById('mainStatus');
+            mainStatus.className = 'status-box checking';
+            mainStatus.innerHTML = '<h2><span class="spinner"></span>Đang kiểm tra...</h2><p>Vui lòng đợi trong giây lát</p>';
+
+            // Check all endpoints
+            const healthCheck = await checkEndpoint(`${API_BASE_URL}/api/health`, 'health-status');
+            const swaggerCheck = await checkEndpoint(`${API_BASE_URL}/swagger/index.html`, 'swagger-status');
+            
+            // Check login endpoint (should return 400 or 401, not connection error)
+            const loginStatusElement = document.getElementById('login-status');
+            loginStatusElement.className = 'status checking';
+            loginStatusElement.textContent = 'Checking...';
+            
+            try {
+                const loginResponse = await fetch(`${API_BASE_URL}/api/auth/login-contestant`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: '', password: '' })
+                });
+                loginStatusElement.className = 'status success';
+                loginStatusElement.textContent = '✅ Online';
+            } catch (error) {
+                loginStatusElement.className = 'status error';
+                loginStatusElement.textContent = '❌ Offline';
+            }
+
+            // Update main status
+            if (healthCheck) {
+                mainStatus.className = 'status-box online';
+                mainStatus.innerHTML = `
+                    <h2>✅ Backend Đang Chạy!</h2>
+                    <p>Backend đang hoạt động bình thường tại <strong>http://localhost:5069</strong></p>
+                    <p style="margin-top: 10px;">Bạn có thể bắt đầu test admin ngay bây giờ!</p>
+                `;
+                console.log('✅ Backend is online');
+            } else {
+                mainStatus.className = 'status-box offline';
+                mainStatus.innerHTML = `
+                    <h2>❌ Backend Chưa Chạy!</h2>
+                    <p>Không thể kết nối đến backend tại <strong>http://localhost:5069</strong></p>
+                    <p style="margin-top: 10px;">Vui lòng khởi động backend theo hướng dẫn bên dưới.</p>
+                `;
+                console.error('❌ Backend is offline');
+            }
+        }
+
+        function openSwagger() {
+            window.open(`${API_BASE_URL}/swagger`, '_blank');
+        }
+
+        function openTestLogin() {
+            window.open('test-admin-login.html', '_blank');
+        }
+
+        function openTestScreens() {
+            window.open('test-admin-screens.html', '_blank');
+        }
+
+        // Auto-check on load
+        window.addEventListener('load', () => {
+            console.log('🚀 Starting backend check...');
+            setTimeout(checkBackend, 500);
+        });
+
+        // Auto-refresh every 10 seconds
+        setInterval(() => {
+            console.log('🔄 Auto-refreshing backend status...');
+            checkBackend();
+        }, 10000);
+    </script>
+</body>
+</html>

@@ -269,11 +269,11 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'http://localhost:5000';
+        const API_BASE_URL = 'http://localhost:5069';
         const FRONTEND_URL = 'http://localhost:5173';
 
         // Update API URL display
-        document.getElementById('apiUrl').textContent = `${API_BASE_URL}/api/auth/login`;
+        document.getElementById('apiUrl').textContent = `${API_BASE_URL}/api/auth/login-contestant`;
 
         document.getElementById('loginForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -292,10 +292,10 @@
             console.log('🚀 STARTING ADMIN LOGIN TEST');
             console.log('='.repeat(60));
             console.log('📝 Credentials:', { username, password: '***' });
-            console.log('🌐 API URL:', `${API_BASE_URL}/api/auth/login`);
+            console.log('🌐 API URL:', `${API_BASE_URL}/api/auth/login-contestant`);
 
             try {
-                const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+                const response = await fetch(`${API_BASE_URL}/api/auth/login-contestant`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
