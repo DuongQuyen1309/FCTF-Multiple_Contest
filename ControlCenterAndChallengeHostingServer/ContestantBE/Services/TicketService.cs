@@ -158,13 +158,13 @@ public class TicketService : ITicketService
     {
         try
         {
+            // TODO: Need contestId parameter to properly join with teams
+            // For now, get first team of user (temporary solution)
             var query = from t in _context.Tickets
                         join a in _context.Users on t.AuthorId equals a.Id
                         join r in _context.Users on t.ReplierId equals r.Id into replierJoin
                         from r in replierJoin.DefaultIfEmpty()
-                        join team in _context.Teams on a.TeamId equals team.Id into teamJoin
-                        from team in teamJoin.DefaultIfEmpty()
-                        select new { t, a, r, team };
+                        select new { t, a, r };
 
             if (userId.HasValue)
                 query = query.Where(x => x.t.AuthorId == userId.Value);
@@ -180,16 +180,28 @@ public class TicketService : ITicketService
 
             var total = await query.CountAsync();
 
-            var tickets = await query
+            var results = await query
                 .AsNoTracking()
                 .OrderByDescending(x => x.t.CreateAt)
                 .Skip((page - 1) * perPage)
                 .Take(perPage)
-                .Select(x => new TicketResponseDTO
+                .ToListAsync();
+
+            // Get team names separately
+            var authorIds = results.Select(x => x.a.Id).Distinct().ToList();
+            var userTeams = await _context.Set<UserTeam>()
+                .Include(ut => ut.Team)
+                .Where(ut => authorIds.Contains(ut.UserId))
+                .ToListAsync();
+
+            var tickets = results.Select(x =>
+            {
+                var userTeam = userTeams.FirstOrDefault(ut => ut.UserId == x.a.Id);
+                return new TicketResponseDTO
                 {
                     Id = x.t.Id,
                     AuthorName = x.a.Name,
-                    TeamName = x.team.Name,
+                    TeamName = userTeam?.Team?.Name,
                     Status = x.t.Status,
                     Title = x.t.Title,
                     Type = x.t.Type,
@@ -197,8 +209,8 @@ public class TicketService : ITicketService
                     Description = x.t.Description,
                     ReplierName = x.r != null ? x.r.Name : null,
                     ReplierMessage = x.t.ReplierMessage
-                })
-                .ToListAsync();
+                };
+            }).ToList();
 
             return new PaginatedTicketsDTO { Tickets = tickets, Total = total };
         }

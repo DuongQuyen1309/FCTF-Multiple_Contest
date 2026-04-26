@@ -15,6 +15,7 @@ public class HintService : IHintService
     private readonly ConfigHelper _configHelper;
     private readonly RedisLockHelper _redisLockHelper;
     private readonly AppLogger _logger;
+    private readonly ContestContext _contestContext;
 
     private const string HintUnlockType = "hints";
 
@@ -23,13 +24,15 @@ public class HintService : IHintService
         ScoreHelper scoreHelper,
         ConfigHelper configHelper,
         RedisLockHelper redisLockHelper,
-        AppLogger logger)
+        AppLogger logger,
+        ContestContext contestContext)
     {
         _context = context;
         _scoreHelper = scoreHelper;
         _configHelper = configHelper;
         _redisLockHelper = redisLockHelper;
         _logger = logger;
+        _contestContext = contestContext;
     }
 
     private List<int> GetPrerequisites(string? requirementsJson)
@@ -89,30 +92,37 @@ public class HintService : IHintService
                 return;
             }
 
+            // Get contest challenge IDs from bank challenge IDs
+            var contestChallengeIds = await _context.ContestsChallenges
+                .Where(cc => cc.ContestId == _contestContext.ContestId && cc.BankId.HasValue && validPrerequisites.Contains(cc.BankId.Value))
+                .Select(cc => cc.Id)
+                .ToListAsync();
+
             IQueryable<Solf> solvesQuery = _context.Solves
                 .AsNoTracking()
-                .Where(s => s.ChallengeId.HasValue);
+                .Where(s => s.ContestChallengeId > 0); // ContestChallengeId is int, not int?
 
             if (_configHelper.IsTeamsMode())
             {
-                if (user.TeamId == null)
+                var teamId = await _context.GetUserTeamIdInContest(user.Id, _contestContext.ContestId);
+                if (teamId == null)
                 {
                     throw new InvalidOperationException("User team not found");
                 }
 
-                solvesQuery = solvesQuery.Where(s => s.TeamId == user.TeamId);
+                solvesQuery = solvesQuery.Where(s => s.TeamId == teamId);
             }
             else
             {
                 solvesQuery = solvesQuery.Where(s => s.UserId == user.Id);
             }
 
-            var solvedChallengeIds = (await solvesQuery
-                    .Select(s => s.ChallengeId!.Value)
+            var solvedContestChallengeIds = (await solvesQuery
+                    .Select(s => s.ContestChallengeId) // No .Value needed, it's already int
                     .ToListAsync())
                 .ToHashSet();
 
-            if (!validPrerequisites.IsSubsetOf(solvedChallengeIds))
+            if (!contestChallengeIds.All(ccId => solvedContestChallengeIds.Contains(ccId)))
             {
                 throw new InvalidOperationException("You don't have the permission to unlock hints for this challenge. Complete the required challenges first.");
             }
@@ -123,7 +133,8 @@ public class HintService : IHintService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, user.Id, user.TeamId, new { challengeId = challenge.Id, requirements = challenge.Requirements });
+            var teamId = await _context.GetUserTeamIdInContest(user.Id, _contestContext.ContestId);
+            _logger.LogError(ex, user.Id, teamId, new { challengeId = challenge.Id, requirements = challenge.Requirements });
         }
     }
 
@@ -137,14 +148,18 @@ public class HintService : IHintService
                 .FirstOrDefaultAsync(h => h.Id == id);
 
             if (hint == null) return null;
-            if (!hint.Challenge.State.Equals("visible"))
+            
+            // Check if challenge is visible in current contest
+            var contestChallenge = await _context.ContestsChallenges
+                .FirstOrDefaultAsync(cc => cc.BankId == hint.ChallengeId && cc.ContestId == _contestContext.ContestId);
+            
+            if (contestChallenge == null || !contestChallenge.State.Equals("visible"))
             {
                 return null;
             }
             var hasCost = (hint.Cost ?? 0) > 0;
 
             var user = await _context.Users
-                .Include(u => u.Team)
                 .FirstOrDefaultAsync(u => u.Id == userId);
 
             // If unauthenticated/null user and hint has cost, keep the old behavior: locked.
@@ -169,12 +184,13 @@ public class HintService : IHintService
                     Unlock? unlocked;
                     if (_configHelper.IsTeamsMode())
                     {
-                        unlocked = user.TeamId == null
+                        var teamId = await _context.GetUserTeamIdInContest(user.Id, _contestContext.ContestId);
+                        unlocked = teamId == null
                             ? null
                             : await _context.Unlocks
                                 .AsNoTracking()
                                 .FirstOrDefaultAsync(u =>
-                                    u.TeamId == user.TeamId &&
+                                    u.TeamId == teamId &&
                                     u.Target == hint.Id &&
                                     (u.Type == HintUnlockType || u.Type == null));
                     }
@@ -219,7 +235,12 @@ public class HintService : IHintService
         {
             var challenge = await _context.Challenges.FirstOrDefaultAsync(c => c.Id == challengeId);
             if (challenge == null) return null;
-            if (!challenge.State.Equals("visible"))
+            
+            // Check if challenge is visible in current contest
+            var contestChallenge = await _context.ContestsChallenges
+                .FirstOrDefaultAsync(cc => cc.BankId == challengeId && cc.ContestId == _contestContext.ContestId);
+            
+            if (contestChallenge == null || !contestChallenge.State.Equals("visible"))
             {
                 return null;
             }
@@ -249,9 +270,10 @@ public class HintService : IHintService
 
                     if (_configHelper.IsTeamsMode())
                     {
-                        if (currentUser.TeamId != null)
+                        var teamId = await _context.GetUserTeamIdInContest(currentUser.Id, _contestContext.ContestId);
+                        if (teamId != null)
                         {
-                            unlocksQuery = unlocksQuery.Where(u => u.TeamId == currentUser.TeamId);
+                            unlocksQuery = unlocksQuery.Where(u => u.TeamId == teamId);
                             var unlocked = await unlocksQuery
                                 .Select(u => u.Target!.Value)
                                 .ToListAsync();
@@ -297,23 +319,29 @@ public class HintService : IHintService
 
             if (target == null) return null;
             if (target.Challenge == null) return null;
-            if (!target.Challenge.State.Equals("visible"))
+            
+            // Check if challenge is visible in current contest
+            var contestChallenge = await _context.ContestsChallenges
+                .FirstOrDefaultAsync(cc => cc.BankId == target.ChallengeId && cc.ContestId == _contestContext.ContestId);
+            
+            if (contestChallenge == null || !contestChallenge.State.Equals("visible"))
             {
                 return null;
             }
 
             var user = await _context.Users
-                .Include(u => u.Team)
                 .FirstOrDefaultAsync(u => u.Id == userId);
 
             if (user == null)
                 throw new InvalidOperationException("User not found");
 
+            var teamId = await _context.GetUserTeamIdInContest(user.Id, _contestContext.ContestId);
+
             // Use distributed lock to prevent race condition across multiple backend replicas
             // Lock key is based on team/user to allow parallel unlocks for different teams
             var lockKey = _configHelper.IsTeamsMode()
-                ? $"hint:unlock:team:{user.TeamId}"
-                : $"hint:unlock:user:{user.Id}";
+                ? $"contest:{_contestContext.ContestId}:hint:unlock:team:{teamId}"
+                : $"contest:{_contestContext.ContestId}:hint:unlock:user:{user.Id}";
             var lockToken = Guid.NewGuid().ToString();
             var lockExpiry = TimeSpan.FromSeconds(30); // Max time to complete unlock operation
 
@@ -332,9 +360,9 @@ public class HintService : IHintService
                     IQueryable<Unlock> allUnlocksQuery = _context.Unlocks.Where(u => u.Type == HintUnlockType);
                     if (_configHelper.IsTeamsMode())
                     {
-                        if (user.TeamId == null)
+                        if (teamId == null)
                             throw new InvalidOperationException("User team not found");
-                        allUnlocksQuery = allUnlocksQuery.Where(u => u.TeamId == user.TeamId);
+                        allUnlocksQuery = allUnlocksQuery.Where(u => u.TeamId == teamId);
                     }
                     else
                     {
@@ -374,7 +402,7 @@ public class HintService : IHintService
                 {
                     // Team Mode: Check by TeamId
                     existing = await _context.Unlocks
-                        .FirstOrDefaultAsync(u => u.Target == req.Target && u.Type == req.Type && u.TeamId == user.TeamId);
+                        .FirstOrDefaultAsync(u => u.Target == req.Target && u.Type == req.Type && u.TeamId == teamId);
                 }
                 else
                 {
@@ -387,14 +415,11 @@ public class HintService : IHintService
                     throw new InvalidOperationException("Already unlocked");
 
                 // Check score inside lock to prevent TOCTOU race
-                var userCheck = await _context.Users
-                    .AsNoTracking()
-                    .Include(u => u.Team)
-                    .FirstOrDefaultAsync(u => u.Id == user.Id);
-                if (userCheck?.Team == null)
+                var userTeam = await _context.GetUserTeamInContest(user.Id, _contestContext.ContestId);
+                if (userTeam == null)
                     throw new InvalidOperationException("User team not found");
 
-                var score = await _scoreHelper.GetTeamScore(userCheck.Team, admin: true);
+                var score = await _scoreHelper.GetTeamScore(userTeam, admin: true);
 
                 if (target.Cost != null && target.Cost > score)
                     throw new InvalidOperationException("Not enough points to unlock this hint");
@@ -404,7 +429,7 @@ public class HintService : IHintService
                     Target = req.Target,
                     Type = req.Type,
                     UserId = user.Id,
-                    TeamId = user.TeamId,
+                    TeamId = teamId,
                     Date = DateTime.UtcNow
                 };
                 _context.Unlocks.Add(unlock);
@@ -412,7 +437,7 @@ public class HintService : IHintService
                 var award = new Award
                 {
                     UserId = user.Id,
-                    TeamId = user.TeamId,
+                    TeamId = teamId,
                     Name = "Hint " + target.ChallengeId,
                     Description = "Hint for " + target.Challenge.Name,
                     Value = -target.Cost.GetValueOrDefault(),

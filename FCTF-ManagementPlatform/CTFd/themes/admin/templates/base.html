@@ -25,20 +25,6 @@
     {{ Assets.css("assets/css/fonts.scss", theme="admin") }}
     {{ Assets.css("assets/css/admin.scss", theme="admin") }}
     {{ Assets.css("assets/css/codemirror.scss", theme="admin") }}
-    <script type="text/javascript">
-        var init = {
-            'urlRoot': "{{ request.script_root }}",
-            'csrfNonce': "{{ Session.nonce }}",
-            'userMode': "{{ Configs.user_mode }}",
-            'userId': {{ Session.id }},
-        'userName': { { User.name | tojson } },
-        'userEmail': { { User.email | tojson } },
-        'teamId': { { Team.id | tojson } },
-        'teamName': { { Team.name | tojson } },
-        'start': { { Configs.start | tojson } },
-        'end': { { Configs.end | tojson } }
-        }
-    </script>
     {% block stylesheets %} {% endblock %}
     {% for stylesheet in get_registered_admin_stylesheets() %}
     {% if stylesheet.startswith('http') %}
@@ -1285,7 +1271,6 @@
                 }
             }
 
-            {% if not is_detail %}
             //inserting title underlines
             $('.jumbotron').find('.container').append(`<svg width="184" height="5" viewBox="0 0 184 5" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="100" width="43" height="5" fill="#E45C25"/>
@@ -1295,7 +1280,6 @@
                 <rect x="182" width="2" height="5" fill="#E45C25"/>
                 <rect opacity="0.5" width="127" height="5" fill="#E45C25"/>
             </svg>`);
-            {% endif %}
 
             $('.jumbotron').append(`<svg width="100%" height="15" viewBox="0 0 1089 15" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path opacity="0.3" d="M-7 1H171.287L187.332 14H938.513L954.559 1H1096" stroke="#E45C25" stroke-width="2"/>

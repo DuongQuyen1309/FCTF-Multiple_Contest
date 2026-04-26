@@ -74,11 +74,11 @@ public class ScoreboardService : IScoreboardService
                     .AsNoTracking()
                     .Select(s => new SolveEntryDTO
                     {
-                        ChallengeId = s.ChallengeId,
+                        ChallengeId = s.ContestChallengeId,
                         AccountId = s.TeamId,
                         TeamId = s.TeamId,
                         UserId = s.UserId,
-                        Value = s.Challenge != null ? s.Challenge.Value : 0,
+                        Value = s.ContestChallenge != null ? s.ContestChallenge.Value : 0,
                         Date = s.IdNavigation.Date
                     })
                     .ToListAsync();
@@ -102,11 +102,11 @@ public class ScoreboardService : IScoreboardService
                     .AsNoTracking()
                     .Select(s => new SolveEntryDTO
                     {
-                        ChallengeId = s.ChallengeId,
+                        ChallengeId = s.ContestChallengeId,
                         AccountId = s.UserId,
                         TeamId = s.TeamId,
                         UserId = s.UserId,
-                        Value = s.Challenge != null ? s.Challenge.Value : 0,
+                        Value = s.ContestChallenge != null ? s.ContestChallenge.Value : 0,
                         Date = s.IdNavigation.Date
                     })
                     .ToListAsync();

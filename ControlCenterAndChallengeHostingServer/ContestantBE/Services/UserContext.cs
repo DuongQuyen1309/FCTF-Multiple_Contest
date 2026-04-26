@@ -13,5 +13,22 @@ public class UserContext : IUserContext
     }
 
     public int UserId => int.Parse(_httpContextAccessor.HttpContext!.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-    public int TeamId => int.Parse(_httpContextAccessor.HttpContext!.User.FindFirstValue("teamId")!);
+    
+    public int TeamId
+    {
+        get
+        {
+            var teamIdClaim = _httpContextAccessor.HttpContext!.User.FindFirstValue("teamId");
+            return string.IsNullOrEmpty(teamIdClaim) ? 0 : int.Parse(teamIdClaim);
+        }
+    }
+    
+    public int ContestId
+    {
+        get
+        {
+            var contestIdClaim = _httpContextAccessor.HttpContext!.User.FindFirstValue("contestId");
+            return string.IsNullOrEmpty(contestIdClaim) ? 0 : int.Parse(contestIdClaim);
+        }
+    }
 }
