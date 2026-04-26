@@ -29,40 +29,13 @@
 
                         <div class="form-row">
                             <div class="form-group col-md-6">
-                                <label>Semester Code</label>
-                                <input type="text" name="code" class="form-control" placeholder="e.g. SEM1-2526">
-                            </div>
-                            <div class="form-group col-md-6">
-                                <label>Academic Year</label>
-                                <input type="text" name="academic_year" class="form-control"
-                                    placeholder="e.g. 2025-2026">
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group col-md-6">
                                 <label>Start Date</label>
-                                <input type="date" name="start_date" class="form-control">
+                                <input type="datetime-local" name="start_time" class="form-control">
                             </div>
                             <div class="form-group col-md-6">
                                 <label>End Date</label>
-                                <input type="date" name="end_date" class="form-control">
+                                <input type="datetime-local" name="end_time" class="form-control">
                             </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Status</label>
-                            <select name="status" class="form-control">
-                                <option value="upcoming">Upcoming</option>
-                                <option value="active">Active</option>
-                                <option value="ended">Ended</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Notes</label>
-                            <textarea name="note" class="form-control" rows="3"
-                                placeholder="Optional notes..."></textarea>
                         </div>
 
                         <div class="d-flex justify-content-end gap-2">

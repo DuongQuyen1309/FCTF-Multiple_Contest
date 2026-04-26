@@ -50,8 +50,23 @@ def semester_new():
             flash("Tên kỳ học không được trống.", "danger")
             return redirect(url_for("admin.semester_new"))
 
+        if Semester.query.filter_by(semester_name=name).first():
+            flash(f"Kỳ học '{name}' đã tồn tại.", "danger")
+            return redirect(url_for("admin.semester_new"))
+
+        def _parse_dt(field):
+            val = request.form.get(field, "").strip()
+            if not val:
+                return None
+            try:
+                return datetime.datetime.fromisoformat(val)
+            except ValueError:
+                return None
+
         sem = Semester(
             semester_name=name,
+            start_time=_parse_dt("start_time"),
+            end_time=_parse_dt("end_time"),
         )
         db.session.add(sem)
         db.session.commit()
@@ -83,7 +98,32 @@ def semester_detail(semester_id):
 def semester_edit(semester_id):
     sem = Semester.query.get_or_404(semester_id)
     if request.method == "POST":
-        sem.semester_name = request.form.get("name", sem.semester_name).strip()
+        new_name = request.form.get("name", sem.semester_name).strip()
+        if not new_name:
+            flash("Tên kỳ học không được trống.", "danger")
+            return redirect(url_for("admin.semester_edit", semester_id=sem.id))
+
+        # Kiểm tra trùng tên (trừ chính nó)
+        conflict = Semester.query.filter(
+            Semester.semester_name == new_name,
+            Semester.id != sem.id
+        ).first()
+        if conflict:
+            flash(f"Tên '{new_name}' đã được dùng bởi kỳ học khác.", "danger")
+            return redirect(url_for("admin.semester_edit", semester_id=sem.id))
+
+        def _parse_dt(field, fallback=None):
+            val = request.form.get(field, "").strip()
+            if not val:
+                return fallback
+            try:
+                return datetime.datetime.fromisoformat(val)
+            except ValueError:
+                return fallback
+
+        sem.semester_name = new_name
+        sem.start_time = _parse_dt("start_time", sem.start_time)
+        sem.end_time = _parse_dt("end_time", sem.end_time)
         db.session.commit()
         flash("Đã cập nhật kỳ học.", "success")
         return redirect(url_for("admin.semester_detail", semester_id=sem.id))
