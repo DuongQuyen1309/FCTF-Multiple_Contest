@@ -78,101 +78,83 @@
             color: var(--text-dark);
         }
 
-        /* ── Sidebar ──────────────────────────────────────────────────── */
-        #sidebar {
-            width: 250px;
-            height: 100vh;
+        /* ── Topbar ───────────────────────────────────────────────────── */
+        #topbar {
+            height: 60px;
+            width: 100%;
             position: fixed;
             top: 0; left: 0;
             background: var(--bg-sidebar);
             color: var(--text-light);
-            padding: 12px 14px;
-            overflow-y: auto;
-            overflow-x: hidden;
+            padding: 0 20px;
             display: flex;
-            flex-direction: column;
-            align-items: flex-start;
+            align-items: center;
+            justify-content: space-between;
             box-shadow: var(--shadow-md);
+            z-index: 1030;
         }
-        #sidebar::-webkit-scrollbar { width: 5px; }
-        #sidebar::-webkit-scrollbar-track { background: transparent; }
-        #sidebar::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 3px; }
-        #sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255,107,53,0.5); }
 
         .logo-container {
             display: flex;
-            justify-content: center;
             align-items: center;
-            width: 100%;
-            margin-bottom: 14px;
+            height: 100%;
+            margin-right: 30px;
             background-color: transparent !important;
         }
-        .logo-container img { max-width: 60%; height: auto; transition: transform 0.3s ease; }
+        .logo-container img { max-height: 40px; width: auto; transition: transform 0.3s ease; }
         .logo-container:hover img { transform: scale(1.05); }
 
-        #sidebar a {
+        .topbar-nav {
+            display: flex;
+            align-items: center;
+            height: 100%;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .topbar-nav .nav-item {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            margin: 0 5px;
+        }
+
+        .topbar-nav a.nav-link {
             color: var(--text-light);
             display: flex;
             align-items: center;
-            padding: 8px 12px;
-            margin-bottom: 3px;
+            padding: 8px 15px;
             text-decoration: none;
             font-weight: 500;
-            font-size: 0.85rem;
+            font-size: 0.9rem;
             border-radius: 5px;
             transition: all 0.2s ease;
-            width: 100%;
-            margin-top: 7px;
         }
-        #sidebar a i { margin-right: 10px; font-size: 1.15em; min-width: 18px; transition: transform 0.2s ease; }
-        #sidebar a:hover { background-color: var(--primary-orange); color: var(--bg-white); transform: translateX(3px); }
-        #sidebar a:hover i { transform: scale(1.1); }
+        .topbar-nav a.nav-link i { margin-right: 8px; font-size: 1.15em; transition: transform 0.2s ease; }
+        .topbar-nav a.nav-link:hover { background-color: var(--primary-orange); color: var(--bg-white); transform: translateY(-2px); }
+        .topbar-nav a.nav-link:hover i { transform: scale(1.1); }
 
-        #sidebar .nav-link.active,
-        #sidebar .sub-btn.active {
+        .topbar-nav .nav-link.active {
             background-color: var(--primary-orange);
             color: var(--bg-white) !important;
             box-shadow: 0 2px 8px rgba(255,107,53,0.3);
             font-weight: 600;
         }
-        #sidebar .sub-menu a.active {
-            background-color: var(--primary-orange);
-            color: var(--bg-white) !important;
-            font-weight: 600;
-        }
 
-        /* Sub Menu */
-        #sidebar .sub-menu {
-            display: none;
-            background-color: rgba(247,207,190,0.5);
-            border-left: 3px solid var(--primary-orange);
-            margin-left: 8px;
-            padding-left: 8px;
-            margin-top: 3px;
-            margin-bottom: 6px;
-            border-radius: 4px;
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            height: 100%;
         }
-        #sidebar .sub-menu a { background-color: transparent; font-size: 0.82rem; padding: 6px 10px; margin-bottom: 2px; }
-        #sidebar .sub-menu a:hover { color: var(--bg-white); background-color: var(--primary-orange); transform: translateX(3px); }
-        #sidebar .nav-item a .dropdown { position: absolute; right: 12px; transition: transform 0.3s ease; }
-        .rotate { transform: rotate(90deg); }
-
-        .dropdown-menu {
-            background-color: var(--bg-sidebar);
-            display: none;
-            margin-top: 6px;
-            transform: none !important;
-            border: 1px solid var(--border-light);
-            box-shadow: var(--shadow-md);
-        }
-        .dropdown-menu a:hover { background-color: var(--primary-orange); color: white; }
 
         /* ── Content Area ─────────────────────────────────────────────── */
         #content {
-            margin-left: 250px;
+            margin-top: 60px;
+            margin-left: 0;
             padding: 0;
-            width: calc(100% - 250px);
-            min-height: 100vh;
+            width: 100%;
+            min-height: calc(100vh - 60px);
             overflow-y: auto;
             background-color: var(--bg-white);
         }
@@ -668,129 +650,59 @@
 
         /* ── Responsive ───────────────────────────────────────────────── */
         @media (max-width: 768px) {
-            #sidebar { margin-left: -250px; }
-            #content { margin-left: 0; width: 100%; }
+            .topbar-nav { display: none; } /* Could add a hamburger menu here later */
+            #content { margin-top: 60px; width: 100%; }
         }
     </style>
 </head>
 
 <body>
-    <nav id="sidebar" class="d-flex flex-column fixed-top">
-        <a href="{{ url_for('views.static_html', route='/') }}" class="navbar-brand logo-container">
-            {% if Configs.ctf_logo %}
-            <img src="{{ url_for('views.files', path=Configs.ctf_logo) }}" alt="{{ Configs.ctf_name }}">
-            {% else %}
-            <img src="{{ url_for('views.themes', theme='admin', path='img/logo.png') }}" alt="F-CTF">
-            {% endif %}
-        </a>
+    <nav id="topbar">
+        <div class="d-flex align-items-center h-100">
+            <a href="{{ url_for('views.static_html', route='/') }}" class="logo-container">
+                {% if Configs.ctf_logo %}
+                <img src="{{ url_for('views.files', path=Configs.ctf_logo) }}" alt="{{ Configs.ctf_name }}">
+                {% else %}
+                <img src="{{ url_for('views.themes', theme='admin', path='img/logo.png') }}" alt="F-CTF">
+                {% endif %}
+            </a>
 
-        <div class="d-flex flex-column w-100">
-            <ul class="list-unstyled components">
-
-                <li class="nav-item mb-2">
-                    <a class="nav-link" href="{{ url_for('admin.global_home') }}" style="background-color: var(--primary-orange); color: white;">
-                        <i class="bx bx-arrow-back"></i> Back to Global Admin
-                    </a>
-                </li>
+            <ul class="topbar-nav">
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.statistics') }}">
-                        <i class="bx bx-bar-chart-alt-2"></i> Dashboard
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.challenges_listing') }}">
-                        <i class="bx bx-book"></i> Challenges
+                    <a class="nav-link" href="{{ url_for('admin.semesters_listing') }}">
+                        <i class="bx bx-calendar"></i> Semesters / Contests
                     </a>
                 </li>
                 {% if is_admin() or is_jury() %}
-
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.users_listing') }}">
-                        <i class="bx bx-user"></i> Users
+                    <a class="nav-link" href="{{ url_for('admin.challenges_listing', global=1) }}">
+                        <i class="bx bx-book"></i> Challenge Bank
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.users_pending_listing') }}">
-                        <i class="bx bx-user-check"></i> Registrations
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.action_logs_listing') }}">
-                        <i class="bx bx-list-ul"></i> Action Logs
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.instances_history_listing') }}">
-                        <i class="bx bx-history"></i> Instances History
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.admin_audit_listing') }}">
-                        <i class="bx bx-shield-quarter"></i> Audit Logs
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.view_tickets') }}">
-                        <i class="bx bx-envelope"></i> Tickets
-                    </a>
-                </li>
-                {% if get_config('user_mode') == 'teams' %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.teams_listing') }}">
-                        <i class="bx bx-group"></i> Teams
-                    </a>
-                </li>
-                {% endif %}
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.scoreboard_listing') }}">
-                        <i class="bx bx-trophy"></i> Scoreboard
-                    </a>
-                </li>
-
-
-                {% endif %}
-
-                {% if is_admin() or is_jury() %}
-                <li class="nav-item">
-                    <a class="sub-btn nav-link"><i class="bx bx-down-arrow-circle"></i>Submissions<i
-                            class='bx bx-chevron-right dropdown'></i> </a>
-                    <div class="sub-menu">
-                        <a href="{{ url_for('admin.submissions_listing') }}" class="sub-item">All Submissions</a>
-                        <a href="{{ url_for('admin.submissions_listing', submission_type='correct') }}"
-                            class="sub-item">Correct Submissions</a>
-                        <a href="{{ url_for('admin.submissions_listing', submission_type='incorrect') }}"
-                            class="sub-item">Incorrect Submissions</a>
-                    </div>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.rewards_page') }}">
-                        <i class="bx bx-line-chart"></i> Dynamic Reward Query
+                    <a class="nav-link" href="{{ url_for('admin.users_listing', global=1) }}">
+                        <i class="bx bx-group"></i> Global Users
                     </a>
                 </li>
                 {% endif %}
                 {% if is_admin() %}
-
-
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('admin.config') }}">
                         <i class="bx bx-cog"></i> Config
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="{{ url_for('admin.monitoring') }}">
-                        <i class="bx bx-server"></i> Monitoring
                     </a>
                 </li>
                 {% endif %}
             </ul>
         </div>
 
-        <div class="mt-auto w-100 pt-3" style="border-top: 1px solid var(--border-light);">
-            <a class="nav-link" href="{{ url_for('auth.logout') }}"
-                style="color: var(--text-light); transition: color 0.2s;" onmouseover="this.style.color='#fff'"
-                onmouseout="this.style.color='var(--text-light)'">
-                <i class="bx bx-log-out"></i> Logout
-            </a>
+        <div class="topbar-right">
+            <ul class="topbar-nav">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('auth.logout') }}">
+                        <i class="bx bx-log-out"></i> Logout
+                    </a>
+                </li>
+            </ul>
         </div>
     </nav>
 
@@ -818,57 +730,29 @@
     {% endfor %}
     <script type="text/javascript">
         $(document).ready(function () {
-            //jquery for toggle sub menus
-            $('.sub-btn').click(function () {
-                $(this).next('.sub-menu').slideToggle();
-                $(this).find('.dropdown').toggleClass('rotate');
-                $(this).toggleClass('active');
-            });
-
-            // Highlight active navigation link
+            // Highlight active navigation link for topbar
             const currentPath = window.location.pathname + window.location.search;
-            let foundMatch = false;
+            let bestMainLink = null;
+            let bestMainLinkLength = -1;
 
-            // First, check sub-menu links (more specific paths first)
-            $('#sidebar .sub-menu a').each(function () {
+            $('#topbar .nav-link').each(function () {
                 const linkHref = $(this).attr('href');
                 if (linkHref) {
-                    const linkPath = linkHref.split('#')[0];
-                    if (currentPath === linkPath || (linkPath.includes('?') && currentPath.startsWith(linkPath.split('?')[0]) && currentPath.includes(linkPath.split('?')[1]))) {
-                        $(this).addClass('active');
-                        // Also open the parent sub-menu and mark parent as active
-                        $(this).closest('.sub-menu').show();
-                        $(this).closest('.nav-item').find('.sub-btn').addClass('active');
-                        $(this).closest('.nav-item').find('.dropdown').addClass('rotate');
-                        foundMatch = true;
+                    const linkPath = linkHref.split('#')[0].split('?')[0];
+                    const normalizedCurrentPath = currentPath.split('?')[0];
+                    const isMatch =
+                        normalizedCurrentPath === linkPath ||
+                        normalizedCurrentPath.startsWith(linkPath + '/');
+
+                    if (isMatch && linkPath !== '/admin' && linkPath.length > bestMainLinkLength) {
+                        bestMainLink = this;
+                        bestMainLinkLength = linkPath.length;
                     }
                 }
             });
 
-            // If no sub-menu match, check main navigation links
-            if (!foundMatch) {
-                let bestMainLink = null;
-                let bestMainLinkLength = -1;
-
-                $('#sidebar .nav-link').not('.sub-btn').each(function () {
-                    const linkHref = $(this).attr('href');
-                    if (linkHref) {
-                        const linkPath = linkHref.split('#')[0].split('?')[0];
-                        const normalizedCurrentPath = currentPath.split('?')[0];
-                        const isMatch =
-                            normalizedCurrentPath === linkPath ||
-                            normalizedCurrentPath.startsWith(linkPath + '/');
-
-                        if (isMatch && linkPath !== '/admin' && linkPath.length > bestMainLinkLength) {
-                            bestMainLink = this;
-                            bestMainLinkLength = linkPath.length;
-                        }
-                    }
-                });
-
-                if (bestMainLink) {
-                    $(bestMainLink).addClass('active');
-                }
+            if (bestMainLink) {
+                $(bestMainLink).addClass('active');
             }
 
             {% if not is_detail %}
