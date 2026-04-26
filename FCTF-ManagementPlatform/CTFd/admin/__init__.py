@@ -37,7 +37,6 @@ from CTFd.admin import estimation
 from CTFd.admin import action_logs  # noqa: F401
 from CTFd.admin import admin_audit  # noqa: F401
 from CTFd.admin import instances_history  # noqa: F401
-from CTFd.admin import semesters  # noqa: F401
 
 from CTFd.cache import (
     cache,
@@ -84,11 +83,8 @@ from CTFd.utils.user import is_admin,is_challenge_writer,is_jury
 
 @admin.route("/admin", methods=["GET"])
 def view():
-    from flask import session
     if is_challenge_writer() or is_admin() or is_jury():
-        if 'admin_contest_id' in session:
-            return redirect(url_for("admin.statistics"))
-        return redirect(url_for("admin.global_home"))
+        return redirect(url_for("admin.statistics"))
     return redirect(url_for("auth.login"))
 
 

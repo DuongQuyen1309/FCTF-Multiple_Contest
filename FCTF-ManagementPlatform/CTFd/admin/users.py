@@ -62,10 +62,6 @@ def _build_registration_custom_field_data(user_items):
 @admin.route("/admin/users")
 @admin_or_jury
 def users_listing():
-    from flask import session
-    if request.args.get('global') == '1' and 'admin_contest_id' in session:
-        session.pop('admin_contest_id')
-
     q = request.args.get("q")
     field = request.args.get("field")
     page = abs(request.args.get("page", 1, type=int))
@@ -107,16 +103,6 @@ def users_listing():
         filters.append(Users.banned == True)
     elif banned_filter == "false":
         filters.append(Users.banned == False)
-
-    from flask import session
-    from CTFd.models import ContestParticipants
-    admin_contest_id = session.get('admin_contest_id')
-    
-    if admin_contest_id:
-        filters.append(Users.id.in_(
-            db.session.query(ContestParticipants.user_id)
-            .filter_by(contest_id=admin_contest_id)
-        ))
 
     if q and field == "ip":
         users = (

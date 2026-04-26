@@ -40,10 +40,6 @@ from CTFd.constants import status_challenge
 @admin.route("/admin/challenges")
 @admin_or_challenge_writer_only_or_jury
 def challenges_listing():
-    from flask import session
-    if request.args.get('global') == '1' and 'admin_contest_id' in session:
-        session.pop('admin_contest_id')
-
     q = request.args.get("q")
     field = request.args.get("field") or "name"
     category = request.args.get("category")
@@ -103,20 +99,11 @@ def challenges_listing():
     elif is_challenge_writer():
         # Filter by the challenge writer associated with the current session
         writer_id = session["id"]  # Assuming the session stores the user ID
-        filters.append(Challenges.author_id == writer_id)
-        
-    from flask import session
-    from CTFd.models import ContestsChallenges
-    admin_contest_id = session.get('admin_contest_id')
-    
-    if admin_contest_id:
-        filters.append(Challenges.id.in_(
-            db.session.query(ContestsChallenges.bank_id)
-            .filter_by(contest_id=admin_contest_id)
-            .filter(ContestsChallenges.bank_id.isnot(None))
-        ))
-
-    query = Challenges.query.filter(*filters).order_by(Challenges.id.asc())
+        filters.append(Challenges.user_id == writer_id)
+        query = Challenges.query.filter(*filters).order_by(Challenges.id.asc())
+    else:
+        # Default fallback - show all challenges
+        query = Challenges.query.filter(*filters).order_by(Challenges.id.asc())
         
     # Fetch the results with pagination
     challenges = query.paginate(page=page, per_page=50, error_out=False)
@@ -129,7 +116,7 @@ def challenges_listing():
     types = [t[0] for t in raw_types if t and t[0]]
     # Add creator names to challenges
     for c in challenges.items:
-        user = Users.query.filter_by(id=c.author_id).first()
+        user = Users.query.filter_by(id=c.user_id).first()
         if user:
             c.creator = user.name
         else:
