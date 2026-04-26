@@ -21,8 +21,8 @@ public class ActionLogsController : BaseController
     [HttpGet("get-logs-team")]
     public async Task<IActionResult> GetActionLogsTeam()
     {
-        var teamId = UserContext.TeamId;
-        var logs_with_details = await _actionLogsServices.GetActionLogsTeam(teamId);
+        var contestId = UserContext.ContestId;
+        var logs_with_details = await _actionLogsServices.GetActionLogsTeam(teamId, contestId);
 
         if (logs_with_details == null || logs_with_details.Count == 0)
         {
