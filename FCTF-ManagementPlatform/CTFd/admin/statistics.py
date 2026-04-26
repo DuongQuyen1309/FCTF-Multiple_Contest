@@ -15,8 +15,7 @@ def statistics():
     users_q = db.session.query(db.func.count(Users.id)).scalar_subquery()
     chals_q = db.session.query(db.func.count(Challenges.id)).scalar_subquery()
     points_q = (
-        db.session.query(db.func.sum(ContestsChallenges.value))
-        .filter(ContestsChallenges.state == "visible")
+        db.session.query(db.func.sum(db.literal(0)))
         .scalar_subquery()
     )
     ips_q = db.session.query(db.func.count(db.func.distinct(Tracking.ip))).scalar_subquery()
@@ -35,24 +34,33 @@ def statistics():
     from CTFd.models import Semester
     semester_q = db.session.query(db.func.count(Semester.id)).scalar_subquery()
 
-    stats = db.session.query(users_q, chals_q, points_q, ips_q, wrong_q, solve_q, semester_q).first()
-    (user_count, challenge_count, total_points, ip_count, wrong_count, solve_count, semester_count) = stats
-
-    # Recent contests with participant/challenge counts
-    from CTFd.models import Semester
-    recent_contests_raw = (
-        Contests.query.join(Semester, Semester.id == Contests.semester_id, isouter=True)
-        .order_by(Contests.id.desc()).limit(10).all()
+    solves_sub = (
+        db.session.query(
+            Solves.contest_challenge_id, db.func.count(Solves.contest_challenge_id).label("solves_cnt")
+        )
+        .join(Model, Solves.account_id == Model.id)
+        .filter(Model.banned == False, Model.hidden == False)
+        .group_by(Solves.contest_challenge_id)
+        .subquery()
     )
-    # Pre-load semester to avoid DetachedInstanceError
-    semester_map = {s.id: s for s in Semester.query.all()}
-    for c in recent_contests_raw:
-        c._semester_obj = semester_map.get(c.semester_id)
-    recent_contests = []
-    for c in recent_contests_raw:
-        c.participant_count = ContestParticipants.query.filter_by(contest_id=c.id).count()
-        c.challenge_count = ContestsChallenges.query.filter_by(contest_id=c.id).count()
-        recent_contests.append(c)
+    
+    from CTFd.models import ContestsChallenges
+    solves = (
+        db.session.query(
+            ContestsChallenges.challenge_id,
+            solves_sub.columns.solves_cnt,
+            Challenges.name,
+        )
+        .join(ContestsChallenges, solves_sub.columns.contest_challenge_id == ContestsChallenges.id)
+        .join(Challenges, ContestsChallenges.challenge_id == Challenges.id)
+        .all()
+    )
+    # solves is a list of tuples: (challenge_id, solves_cnt, name)
+    # Unpack accordingly: (challenge_id, count, name)
+    solve_data = {name: count for _cid, count, name in solves}
+    most_solved = max(solve_data, key=solve_data.get) if solve_data else None
+    least_solved = min(solve_data, key=solve_data.get) if solve_data else None
+    db.session.close()
 
     return render_template(
         "admin/statistics.html",

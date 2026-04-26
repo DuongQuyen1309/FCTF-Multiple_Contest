@@ -85,8 +85,10 @@ def challenges_listing():
     if difficulty:
         filters.append(Challenges.difficulty == int(difficulty))
 
-    if state_filter:
-        filters.append(Challenges.state == state_filter)
+    if state_filter == "visible":
+        filters.append(Challenges.is_public == True)
+    elif state_filter == "hidden":
+        filters.append(Challenges.is_public == False)
 
     if has_prereq == "yes":
         # requirements is a JSON column like {"prerequisites": [1, 2, ...]}
