@@ -313,9 +313,9 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.MemoryRequest).HasColumnType("int(11)").HasColumnName("memory_request");
             entity.Property(e => e.UseGvisor).HasColumnName("use_gvisor");
             entity.Property(e => e.HardenContainer).HasColumnName("harden_container");
+            entity.Property(e => e.SharedInstant).HasColumnName("shared_instant").HasDefaultValue(false);
             entity.Property(e => e.MaxDeployCount).HasColumnType("int(11)").HasColumnName("max_deploy_count");
             entity.Property(e => e.ConnectionProtocol).HasMaxLength(10).HasDefaultValueSql("'http'").HasColumnName("connection_protocol");
-            entity.Property(e => e.SharedInstant).HasColumnName("shared_instant").HasDefaultValue(false);
             entity.Property(e => e.IsPublic).HasColumnName("is_public").HasDefaultValue(false);
             entity.Property(e => e.ImportCount).HasColumnType("int(11)").HasColumnName("import_count").HasDefaultValue(0);
             entity.Property(e => e.CreatedAt).HasMaxLength(6).HasColumnName("created_at");
@@ -905,7 +905,7 @@ public partial class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("fk_teams_bracket_id");
 
-            entity.HasOne(d => d.Captain).WithMany(p => p.Teams)
+            entity.HasOne(d => d.Captain).WithMany()
                 .HasForeignKey(d => d.CaptainId)
                 .OnDelete(DeleteBehavior.SetNull)
                 .HasConstraintName("team_captain_id");
@@ -1244,6 +1244,25 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ContestId).HasColumnType("int(11)").HasColumnName("contest_id");
             entity.Property(e => e.BankId).HasColumnType("int(11)").HasColumnName("bank_id");
             entity.Property(e => e.Name).HasMaxLength(80).HasColumnName("name");
+            entity.Property(e => e.Description).HasColumnType("text").HasColumnName("description");
+            entity.Property(e => e.Category).HasMaxLength(80).HasColumnName("category");
+            entity.Property(e => e.Type).HasMaxLength(80).HasColumnName("type");
+            entity.Property(e => e.Difficulty).HasColumnType("int(11)").HasColumnName("difficulty");
+            entity.Property(e => e.Requirements).HasColumnType("text").HasColumnName("requirements");
+            entity.Property(e => e.ImageLink).HasColumnType("text").HasColumnName("image_link");
+            entity.Property(e => e.DeployFile).HasColumnType("text").HasColumnName("deploy_file");
+            entity.Property(e => e.CpuLimit).HasColumnType("int(11)").HasColumnName("cpu_limit");
+            entity.Property(e => e.CpuRequest).HasColumnType("int(11)").HasColumnName("cpu_request");
+            entity.Property(e => e.MemoryLimit).HasColumnType("int(11)").HasColumnName("memory_limit");
+            entity.Property(e => e.MemoryRequest).HasColumnType("int(11)").HasColumnName("memory_request");
+            entity.Property(e => e.UseGvisor).HasColumnName("use_gvisor");
+            entity.Property(e => e.HardenContainer).HasColumnName("harden_container");
+            entity.Property(e => e.SharedInstant).HasColumnName("shared_instant").HasDefaultValue(false);
+            entity.Property(e => e.MaxDeployCount).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("max_deploy_count");
+            entity.Property(e => e.IsPublic).HasColumnName("is_public").HasDefaultValue(false);
+            entity.Property(e => e.ImportCount).HasColumnType("int(11)").HasColumnName("import_count").HasDefaultValue(0);
+            entity.Property(e => e.CreatedAt).HasMaxLength(6).HasColumnName("created_at");
+            entity.Property(e => e.UpdateAt).HasMaxLength(6).HasColumnName("update_at");
             entity.Property(e => e.ConnectionInfo).HasColumnType("text").HasColumnName("connection_info");
             entity.Property(e => e.NextId).HasColumnType("int(11)").HasColumnName("next_id");
             entity.Property(e => e.MaxAttempts).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("max_attempts");
@@ -1255,8 +1274,6 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.Cooldown).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("cooldown");
             entity.Property(e => e.RequireDeploy).HasColumnName("require_deploy").HasDefaultValue(false);
             entity.Property(e => e.DeployStatus).HasColumnType("text").HasDefaultValueSql("'CREATED'").HasColumnName("deploy_status");
-            entity.Property(e => e.LastUpdate).HasMaxLength(6).HasColumnName("last_update");
-            entity.Property(e => e.MaxDeployCount).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("max_deploy_count");
             entity.Property(e => e.ConnectionProtocol).HasMaxLength(10).HasDefaultValueSql("'http'").HasColumnName("connection_protocol");
             entity.Property(e => e.UserId).HasColumnType("int(11)").HasColumnName("user_id");
 
@@ -1290,16 +1307,35 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.TeamId).HasColumnType("int(11)").HasColumnName("team_id");
             entity.Property(e => e.JoinedAt).HasMaxLength(6).HasColumnName("joined_at");
 
-            entity.HasOne(d => d.User).WithMany()
+            entity.HasOne(d => d.User)
+                .WithMany()
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_users_teams_user");
 
-            entity.HasOne(d => d.Team).WithMany(p => p.Users)
+            entity.HasOne(d => d.Team)
+                .WithMany()
                 .HasForeignKey(d => d.TeamId)
                 .OnDelete(DeleteBehavior.Cascade)
                 .HasConstraintName("fk_users_teams_team");
         });
+        
+        // Configure many-to-many relationship between User and Team via UserTeam
+        modelBuilder.Entity<User>()
+            .HasMany(u => u.Teams)
+            .WithMany(t => t.Users)
+            .UsingEntity<UserTeam>(
+                j => j.HasOne(ut => ut.Team)
+                      .WithMany()
+                      .HasForeignKey(ut => ut.TeamId),
+                j => j.HasOne(ut => ut.User)
+                      .WithMany()
+                      .HasForeignKey(ut => ut.UserId),
+                j =>
+                {
+                    j.HasKey(ut => new { ut.UserId, ut.TeamId });
+                    j.ToTable("users_teams");
+                });
     }
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder);

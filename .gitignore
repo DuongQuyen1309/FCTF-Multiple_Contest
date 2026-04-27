@@ -138,3 +138,18 @@ dist
 ctf-directory/*
 
 FCTF-ManagementPlatform/data/*
+
+# Env files - credentials
+.env
+.env.local
+*.env
+.env.*
+
+# Local test scripts
+**/test_*.py
+
+# Kube config
+local-kube/config
+
+# Credentials docs
+service_credentials.md

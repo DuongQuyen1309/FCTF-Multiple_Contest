@@ -28,7 +28,8 @@ public interface IK8sService
         string labelSelector = "ctf/kind=challenge");
 
     Task<ChallengeDeployResponeDTO?> HandleChallengeRunning(
-        int challengeId,
+        int contestChallengeId,
+        int contestId,
         int teamId,
         string podName,
         ChallengeDeploymentCacheDTO deploymentCache);
@@ -180,10 +181,10 @@ public class K8sService : IK8sService
                     else age = $"{(int)diff.TotalMinutes}m";
                 }
 
-                var (teamId, challengeId) = ChallengeHelper.ParseDeploymentAppName(ns);
+                var (teamId, contestId, contestChallengeId) = ChallengeHelper.ParseDeploymentAppName(ns);
 
                 var isStuck = IsPodStuck(pod);
-                var deploymentKey = ChallengeHelper.GetCacheKey(challengeId, teamId);
+                var deploymentKey = ChallengeHelper.GetCacheKey(contestId, contestChallengeId, teamId);
                 var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
                 if (isStuck)
                 {
@@ -205,7 +206,7 @@ public class K8sService : IK8sService
                             {
                                 Namespace = ns,
                                 TeamId = teamId,
-                                ChallengeId = challengeId,
+                                ChallengeId = contestChallengeId,
                                 //UserId = deploymentCache?.user_id ?? 0,
                                 Name = name,
                                 Ready = ready,
@@ -222,7 +223,7 @@ public class K8sService : IK8sService
                 {
                     Namespace = ns,
                     TeamId = teamId,
-                    ChallengeId = challengeId,
+                    ChallengeId = contestChallengeId,
                     //UserId = deploymentCache?.user_id ?? 0,
                     Name = name,
                     Ready = ready,
@@ -242,17 +243,18 @@ public class K8sService : IK8sService
         return podsResult;
     }
 
-    public async Task<ChallengeDeployResponeDTO?> HandleChallengeRunning(int challengeId, int teamId, string podName, ChallengeDeploymentCacheDTO deploymentCache)
+    public async Task<ChallengeDeployResponeDTO?> HandleChallengeRunning(int contestChallengeId, int contestId, int teamId, string podName, ChallengeDeploymentCacheDTO deploymentCache)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetService<AppDbContext>() ?? throw new Exception("dbcontext null");
-            var challenge = await dbContext.Challenges.AsNoTracking()
-                .Select(c => new { c.Id, c.TimeLimit })
-                .FirstOrDefaultAsync(c => c.Id == challengeId);
 
-            if (challenge == null)
+            var cc = await dbContext.ContestsChallenges.AsNoTracking()
+                .Select(c => new { c.Id, c.TimeLimit })
+                .FirstOrDefaultAsync(c => c.Id == contestChallengeId);
+
+            if (cc == null)
                 return new ChallengeDeployResponeDTO
                 {
                     success = false,
@@ -260,7 +262,6 @@ public class K8sService : IK8sService
                     status = (int)HttpStatusCode.NotFound
                 };
 
-            // if have time finished keep it; else calculate new finish time and update db as challenge started
             long finalUnixFinished;
             if (deploymentCache.time_finished > DateTimeOffset.UtcNow.ToUnixTimeSeconds())
             {
@@ -268,15 +269,15 @@ public class K8sService : IK8sService
             }
             else
             {
-                int minutes = challenge.TimeLimit ?? 30;
+                int minutes = cc.TimeLimit ?? 30;
                 var now = DateTimeOffset.UtcNow;
                 finalUnixFinished = now.AddMinutes(minutes).ToUnixTimeSeconds();
-                //if admin preview challenge skip tracking
-                if(teamId != -1 && teamId != -2)
+                if (teamId != -1 && teamId != -2)
                 {
                     dbContext.ChallengeStartTrackings.Add(new ChallengeStartTracking
                     {
-                        ChallengeId = challengeId,
+                        ContestChallengeId = contestChallengeId,
+                        ContestId = contestId,
                         TeamId = teamId,
                         StartedAt = now.DateTime,
                         Label = $"{podName}"
@@ -288,10 +289,8 @@ public class K8sService : IK8sService
             var expiryOffset = DateTimeOffset.FromUnixTimeSeconds(finalUnixFinished);
             var challengeDomain = ChallengeHelper.GenerateChallengeToken(podName, expiryOffset);
             int realTtlSeconds = (int)(expiryOffset - DateTimeOffset.UtcNow).TotalSeconds;
-
             if (realTtlSeconds <= 0) realTtlSeconds = 60;
 
-            // 4. Update Cache Object
             deploymentCache.status = DeploymentStatus.RUNING;
             deploymentCache.challenge_url = challengeDomain;
             deploymentCache.time_finished = finalUnixFinished;
@@ -299,10 +298,11 @@ public class K8sService : IK8sService
 
             await _redisHelper.AtomicUpdateExpiration(
                 teamId.ToString(),
-                ChallengeHelper.GetCacheKey(challengeId, teamId),
-                challengeId.ToString(),
+                ChallengeHelper.GetCacheKey(contestId, contestChallengeId, teamId),
+                contestChallengeId.ToString(),
                 realTtlSeconds,
-                JsonSerializer.Serialize(deploymentCache)
+                JsonSerializer.Serialize(deploymentCache),
+                contestId
             );
             return new ChallengeDeployResponeDTO
             {
@@ -310,13 +310,12 @@ public class K8sService : IK8sService
                 message = "Challenge is running.",
                 status = (int)HttpStatusCode.OK,
                 challenge_url = challengeDomain,
-                time_limit = challenge.TimeLimit ?? -1
+                time_limit = cc.TimeLimit ?? -1
             };
-
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, null, teamId, new { challengeId, podName, errorType = "HandleChallengeRunningError" });
+            _logger.LogError(ex, null, teamId, new { contestChallengeId, podName, errorType = "HandleChallengeRunningError" });
             return new ChallengeDeployResponeDTO
             {
                 success = false,

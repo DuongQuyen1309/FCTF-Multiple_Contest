@@ -103,8 +103,10 @@ def get_current_team_attrs():
         except TypeError:
             clear_user_session(user_id=session["id"])
             user = get_user_attrs(user_id=session["id"])
-        if user and False:  # team_id removed from Users model
-            return get_team_attrs(team_id=None)
+
+        # Admin users don't have team_id attribute
+        if user and hasattr(user, 'team_id') and user.team_id:
+            return get_team_attrs(team_id=user.team_id)
     return None
 
 

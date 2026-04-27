@@ -39,6 +39,9 @@ class AuthService {
   }
 
   async login(credentials: LoginCredentials): Promise<AuthResponse> {
+    console.log('[AuthService] Login request to:', `${API_BASE_URL}${API_ENDPOINTS.AUTH.LOGIN}`);
+    console.log('[AuthService] Credentials:', { username: credentials.username, hasCaptcha: !!credentials.captchaToken });
+    
     const response = await this.fetchWithTimeout(`${API_BASE_URL}${API_ENDPOINTS.AUTH.LOGIN}`, {
       method: 'POST',
       headers: {
@@ -46,14 +49,81 @@ class AuthService {
       },
       body: JSON.stringify(credentials),
     });
+    
+    console.log('[AuthService] Response status:', response.status);
+    
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error('[AuthService] Login failed:', errorData);
       throw new Error(errorData.message || 'Login failed');
     }
 
     const data: AuthResponse = await response.json();
+    console.log('[AuthService] Login response data:', data);
+    console.log('[AuthService] Token from response:', data.generatedToken ? 'exists' : 'MISSING');
+    console.log('[AuthService] User from response:', data.user ? 'exists' : 'MISSING');
+    
+    if (!data.generatedToken) {
+      console.error('[AuthService] ERROR: No token in response!');
+      throw new Error('No authentication token received from server');
+    }
+    
+    if (!data.user) {
+      console.error('[AuthService] ERROR: No user data in response!');
+      throw new Error('No user data received from server');
+    }
+    
     this.setToken(data.generatedToken);
     this.setUser(data.user);
+    
+    console.log('[AuthService] Token saved to localStorage');
+    console.log('[AuthService] User saved to localStorage');
+    
+    return data;
+  }
+
+  async selectContest(contestId: number): Promise<{ token: string; contestId: number; contestName: string; teamId?: number; teamName?: string }> {
+    console.log('[AuthService] selectContest called with contestId:', contestId);
+    console.log('[AuthService] Current token:', this.getToken() ? 'exists' : 'missing');
+    
+    const response = await this.fetchWithTimeout(`${API_BASE_URL}${API_ENDPOINTS.AUTH.SELECT_CONTEST}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.getToken()}`,
+      },
+      body: JSON.stringify({ contestId }),
+    });
+
+    console.log('[AuthService] selectContest response status:', response.status);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('[AuthService] selectContest failed:', errorData);
+      throw new Error(errorData.message || 'Failed to select contest');
+    }
+
+    const result = await response.json();
+    console.log('[AuthService] selectContest result:', result);
+    
+    const data = result.data;
+    
+    // Update token and user info with contest context
+    console.log('[AuthService] Updating token with new contest token');
+    this.setToken(data.token);
+    
+    const currentUser = this.getUser();
+    if (currentUser) {
+      console.log('[AuthService] Updating user info with team data');
+      this.setUser({
+        ...currentUser,
+        team: data.teamId ? { id: data.teamId, teamName: data.teamName || '' } : null,
+      });
+    }
+    
+    console.log('[AuthService] Token after update:', this.getToken() ? 'exists' : 'missing');
+    console.log('[AuthService] User after update:', this.getUser() ? 'exists' : 'missing');
+    
     return data;
   }
 

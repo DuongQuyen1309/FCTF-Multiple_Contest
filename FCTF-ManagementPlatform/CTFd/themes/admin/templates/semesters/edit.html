@@ -33,43 +33,15 @@
 
                         <div class="form-row">
                             <div class="form-group col-md-6">
-                                <label>Semester Code</label>
-                                <input type="text" name="code" class="form-control" value="">
-                            </div>
-                            <div class="form-group col-md-6">
-                                <label>Academic Year</label>
-                                <input type="text" name="academic_year" class="form-control" value="">
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group col-md-6">
                                 <label>Start Date</label>
-                                <input type="date" name="start_date" class="form-control"
-                                    value="{{ semester.start_time.strftime('%Y-%m-%d') if semester.start_time else '' }}">
+                                <input type="datetime-local" name="start_time" class="form-control"
+                                    value="{{ semester.start_time.strftime('%Y-%m-%dT%H:%M') if semester.start_time else '' }}">
                             </div>
                             <div class="form-group col-md-6">
                                 <label>End Date</label>
-                                <input type="date" name="end_date" class="form-control"
-                                    value="{{ semester.end_time.strftime('%Y-%m-%d') if semester.end_time else '' }}">
+                                <input type="datetime-local" name="end_time" class="form-control"
+                                    value="{{ semester.end_time.strftime('%Y-%m-%dT%H:%M') if semester.end_time else '' }}">
                             </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Status</label>
-                            <select name="status" class="form-control">
-                                <option value="upcoming" {% if semester.semester_name=='upcoming' %}selected{% endif %}>
-                                    Upcoming</option>
-                                <option value="active" {% if semester.semester_name=='active' %}selected{% endif %}>
-                                    Active</option>
-                                <option value="ended" {% if semester.semester_name=='ended' %}selected{% endif %}>Ended
-                                </option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label>Notes</label>
-                            <textarea name="note" class="form-control" rows="3"></textarea>
                         </div>
 
                         <div class="d-flex justify-content-end">

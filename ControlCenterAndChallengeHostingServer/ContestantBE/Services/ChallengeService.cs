@@ -1,4 +1,4 @@
-﻿using ContestantBE.Utils;
+using ContestantBE.Utils;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
 using ResourceShared;
@@ -10,20 +10,19 @@ using ResourceShared.Logger;
 using ResourceShared.Models;
 using ResourceShared.Utils;
 using RestSharp;
-using StackExchange.Redis;
 using System.Net;
 
 namespace ContestantBE.Services;
 
 public interface IChallengeService
 {
-    Task<ChallengeDeployResponeDTO> ChallengeStart(Challenge challenge, User user);
-    Task<ChallengeDeployResponeDTO> ForceStopChallenge(int challengeId, User user);
-    Task<ChallengeDeployResponeDTO> CheckChallengeStart(int challengeId, int teamId);
-    Task<BaseResponseDTO<ChallengeByIdDTO>> GetById(int challengeId, User user);
-    Task<List<TopicDTO>> GetTopic(User user);
-    Task<List<ChallengeByCategoryDTO>> GetChallengeByCategories(string cacategory_name, int? team_id);
-    Task<List<ChallengeInstanceDTO>> GetAllInstances(int teamId);
+    Task<ChallengeDeployResponeDTO> ChallengeStart(ContestsChallenge cc, Challenge bank, User user, int teamId, int contestId);
+    Task<ChallengeDeployResponeDTO> ForceStopChallenge(int contestChallengeId, int teamId, User user, int contestId);
+    Task<ChallengeDeployResponeDTO> CheckChallengeStart(int contestChallengeId, int teamId, int contestId);
+    Task<BaseResponseDTO<ChallengeByIdDTO>> GetById(int contestChallengeId, int teamId, User user, int contestId);
+    Task<List<TopicDTO>> GetTopic(int teamId, int contestId);
+    Task<List<ChallengeByCategoryDTO>> GetChallengeByCategories(string category_name, int teamId, int contestId);
+    Task<List<ChallengeInstanceDTO>> GetAllInstances(int teamId, int contestId);
 }
 
 public class ChallengeService : IChallengeService
@@ -34,6 +33,7 @@ public class ChallengeService : IChallengeService
     private readonly ConfigHelper _configHelper;
     private readonly AppLogger _logger;
     private readonly MultiServiceConnector _multiServiceConnector;
+
     public ChallengeService(
         AppDbContext dbContext,
         RedisHelper redisHelper,
@@ -50,235 +50,199 @@ public class ChallengeService : IChallengeService
         _multiServiceConnector = multiServiceConnector;
     }
 
-    private ChallengeRequirementsDTO? TryParseRequirements(string? requirementsJson, int challengeId, int? teamId)
+    private ChallengeRequirementsDTO? TryParseRequirements(string? requirementsJson, int contestChallengeId, int? teamId)
     {
-        if (string.IsNullOrWhiteSpace(requirementsJson))
-        {
-            return null;
-        }
-
+        if (string.IsNullOrWhiteSpace(requirementsJson)) return null;
         try
         {
             return JsonConvert.DeserializeObject<ChallengeRequirementsDTO>(requirementsJson);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, null, teamId, new { challengeId, requirements = requirementsJson });
+            _logger.LogError(ex, null, teamId, new { contestChallengeId, requirements = requirementsJson });
             return null;
         }
     }
 
     private static bool IsUnlockedByPrerequisites(
         ChallengeRequirementsDTO? requirements,
-        HashSet<int> solvedChallengeIds,
-        HashSet<int> allChallengeIds)
+        HashSet<int> solvedIds,
+        HashSet<int> allIds)
     {
         var prerequisites = requirements?.prerequisites;
-        if (prerequisites == null || prerequisites.Count == 0)
-        {
-            return true;
-        }
-
+        if (prerequisites == null || prerequisites.Count == 0) return true;
         foreach (var prereqId in prerequisites)
         {
-            // Ignore invalid prerequisite IDs, same behavior as CTFd upstream.
-            if (!allChallengeIds.Contains(prereqId))
-            {
-                continue;
-            }
-
-            if (!solvedChallengeIds.Contains(prereqId))
-            {
-                return false;
-            }
+            if (!allIds.Contains(prereqId)) continue;
+            if (!solvedIds.Contains(prereqId)) return false;
         }
-
         return true;
     }
 
-    public async Task<BaseResponseDTO<ChallengeByIdDTO>> GetById(int challengeId, User user)
+    public async Task<BaseResponseDTO<ChallengeByIdDTO>> GetById(int contestChallengeId, int teamId, User user, int contestId)
     {
-        var challenge = await _dbContext.Challenges
+        var cc = await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Include(c => c.Files)
-            .FirstOrDefaultAsync(c => c.Id == challengeId);
+            .Include(c => c.BankChallenge!.Files)
+            .FirstOrDefaultAsync(c => c.Id == contestChallengeId && c.ContestId == contestId);
 
-        if (challenge == null)
-        {
-            return new BaseResponseDTO<ChallengeByIdDTO>
-            {
-                HttpStatusCode = HttpStatusCode.NotFound,
-                Message = "Challenge not found"
-            };
-        }
-        if (challenge.State == "hidden")
-        {
-            return new BaseResponseDTO<ChallengeByIdDTO>
-            {
-                HttpStatusCode = HttpStatusCode.NotFound,
-                Message = "Challenge now is not available"
-            };
-        }
+        if (cc == null || cc.BankChallenge == null)
+            return new BaseResponseDTO<ChallengeByIdDTO> { HttpStatusCode = HttpStatusCode.NotFound, Message = "Challenge not found" };
 
-        var requirementsObj = TryParseRequirements(challenge.Requirements, challenge.Id, user.TeamId);
+        var bank = cc.BankChallenge;
 
-        var solvedChallengeIds = await _dbContext.Solves
+        if (cc.State == "hidden")
+            return new BaseResponseDTO<ChallengeByIdDTO> { HttpStatusCode = HttpStatusCode.NotFound, Message = "Challenge is not available" };
+
+        var requirementsObj = TryParseRequirements(bank.Requirements, contestChallengeId, teamId);
+
+        // Prerequisites use bank IDs (requirements JSON references bank challenge IDs)
+        var solvedBankIds = teamId > 0
+            ? (await _dbContext.Solves
+                .AsNoTracking()
+                .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                .Select(s => s.ContestChallenge.BankId!.Value)
+                .ToListAsync()).ToHashSet()
+            : new HashSet<int>();
+
+        var allBankIds = (await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Where(s => s.TeamId == user.TeamId && s.ChallengeId.HasValue)
-            .Select(s => s.ChallengeId!.Value)
-            .ToListAsync();
+            .Where(c => c.ContestId == contestId && c.BankId.HasValue)
+            .Select(c => c.BankId!.Value)
+            .ToListAsync()).ToHashSet();
 
-        var allChallengeIds = await _dbContext.Challenges
-            .AsNoTracking()
-            .Select(c => c.Id)
-            .ToListAsync();
-
-        var isUnlocked = IsUnlockedByPrerequisites(
-            requirementsObj,
-            solvedChallengeIds.ToHashSet(),
-            allChallengeIds.ToHashSet());
-
+        var isUnlocked = IsUnlockedByPrerequisites(requirementsObj, solvedBankIds, allBankIds);
         if (!isUnlocked && requirementsObj?.anonymize != true)
-        {
             return new BaseResponseDTO<ChallengeByIdDTO>
             {
                 HttpStatusCode = HttpStatusCode.Forbidden,
                 Message = "You don't have the permission to access this challenge. Complete the required challenges first."
             };
-        }
 
-        var solve_id = await _dbContext.Solves
+        var solveId = await _dbContext.Solves
             .AsNoTracking()
-            .FirstOrDefaultAsync(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId);
+            .FirstOrDefaultAsync(s => s.ContestChallengeId == contestChallengeId && s.TeamId == teamId);
 
         var attempts = await _dbContext.Submissions
             .AsNoTracking()
-            .CountAsync(s => s.ChallengeId == challenge.Id && s.TeamId == user.TeamId);
+            .CountAsync(s => s.ContestChallengeId == contestChallengeId && s.TeamId == teamId);
 
         var deployedCount = await _dbContext.ChallengeStartTrackings
             .AsNoTracking()
-            .CountAsync(d => d.ChallengeId == challenge.Id && d.TeamId == user.TeamId);
+            .CountAsync(d => d.ContestChallengeId == contestChallengeId && d.TeamId == teamId);
 
         var files = new List<object>();
-        foreach (var file in challenge.Files)
+        foreach (var file in bank.Files)
         {
-            var token = new FileTokenDTOs
-            {
-                user_id = user.Id,
-                team_id = user.TeamId,
-                file_id = file.Id
-            };
-            var file_url = $"/files?path={file.Location}&token={ItsDangerousCompatHelper.Dumps(token)}";
-
-            if (file_url != null) files.Add(file_url);
+            var token = new FileTokenDTOs { user_id = user.Id, team_id = teamId, file_id = file.Id };
+            var fileUrl = $"/files?path={file.Location}&token={ItsDangerousCompatHelper.Dumps(token)}";
+            files.Add(fileUrl);
         }
+
         var captainOnlyStart = _configHelper.GetConfig<bool>("captain_only_start_challenge", true);
         var captainOnlySubmit = _configHelper.GetConfig<bool>("captain_only_submit_challenge", true);
         var difficultyVisible = _configHelper.GetConfig<string>("challenge_difficulty_visibility", "disabled") == "enabled";
 
-        // attempt to resolve the name for next challenge if available
         string? nextName = null;
-        if (challenge.NextId.HasValue)
+        if (cc.NextId.HasValue)
         {
-            nextName = await _dbContext.Challenges
+            var nextCc = await _dbContext.ContestsChallenges
                 .AsNoTracking()
-                .Where(c => c.Id == challenge.NextId.Value)
-                .Select(c => c.Name)
+                .Where(c => c.Id == cc.NextId.Value)
+                .Select(c => new { c.Name, BankName = c.BankChallenge != null ? c.BankChallenge.Name : null })
+                .FirstOrDefaultAsync();
+            nextName = nextCc?.Name ?? nextCc?.BankName;
+        }
+
+        int? captainId = null;
+        if (teamId > 0)
+        {
+            captainId = await _dbContext.Teams
+                .AsNoTracking()
+                .Where(t => t.Id == teamId)
+                .Select(t => t.CaptainId)
                 .FirstOrDefaultAsync();
         }
 
-        var challenge_data = new ChallengeDataDto
+        var challengeData = new ChallengeDataDto
         {
-            id = challenge.Id,
-            name = challenge.Name ?? string.Empty,
-            description = ChallengeHelper.ModifyDescription(challenge),
-            max_attempts = challenge.MaxAttempts,
+            id = cc.Id,
+            name = cc.Name ?? bank.Name ?? string.Empty,
+            description = ChallengeHelper.ModifyDescription(bank),
+            max_attempts = cc.MaxAttempts,
             attemps = attempts,
-            max_deploy_count = challenge.MaxDeployCount,
+            max_deploy_count = cc.MaxDeployCount ?? bank.MaxDeployCount,
             deployed_count = deployedCount,
-            category = challenge.Category,
-            time_limit = challenge.TimeLimit,
-            require_deploy = challenge.RequireDeploy,
-            connection_protocol = string.IsNullOrWhiteSpace(challenge.ConnectionProtocol) ? "http" : challenge.ConnectionProtocol,
-            type = challenge.Type,
-            next_id = challenge.NextId,
+            category = bank.Category,
+            time_limit = cc.TimeLimit,
+            require_deploy = cc.RequireDeploy,
+            connection_protocol = string.IsNullOrWhiteSpace(cc.ConnectionProtocol)
+                ? (string.IsNullOrWhiteSpace(bank.ConnectionProtocol) ? "http" : bank.ConnectionProtocol)
+                : cc.ConnectionProtocol,
+            type = bank.Type,
+            next_id = cc.NextId,
             next_name = nextName,
-            solve_by_myteam = solve_id != null ? true : false,
+            solve_by_myteam = solveId != null,
             files = files,
-            is_captain = user.Id == user.Team.CaptainId,
+            is_captain = captainId.HasValue && user.Id == captainId.Value,
             captain_only_start = captainOnlyStart,
             captain_only_submit = captainOnlySubmit,
-            difficulty = difficultyVisible ? challenge.Difficulty : null,
-            shared_instance = challenge.SharedInstant
+            difficulty = difficultyVisible ? bank.Difficulty : null,
+            shared_instance = bank.SharedInstant ?? false // Convert bool? to bool
         };
-        int teamId = user.TeamId ?? 0;
-        if (challenge.SharedInstant)
+
+        int effectiveTeamId = teamId;
+        if (bank.SharedInstant ?? false) effectiveTeamId = -2; // Convert bool? to bool
+
+        var cacheKey = ChallengeHelper.GetCacheKey(contestId, contestChallengeId, effectiveTeamId);
+        if (await _redisHelper.KeyExistsAsync(cacheKey))
         {
-            teamId = -2; // use -2 to indicate shared instance, so all teams can see the same deployment status
-        }
-        var cache_key = ChallengeHelper.GetCacheKey(challenge.Id, teamId);
-        if (await _redisHelper.KeyExistsAsync(cache_key))
-        {
-            var cached_value = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(cache_key);
-            if (cached_value == null)
-            {
+            var cachedValue = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(cacheKey);
+            if (cachedValue == null)
                 return new BaseResponseDTO<ChallengeByIdDTO>
                 {
                     HttpStatusCode = HttpStatusCode.OK,
-                    Data = new ChallengeByIdDTO
-                    {
-                        challenge = challenge_data,
-                        is_started = false
-                    }
+                    Data = new ChallengeByIdDTO { challenge = challengeData, is_started = false }
                 };
-            }
 
-            var user_chal = await _dbContext.Users
-                .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Id == cached_value.user_id);
+            var userChal = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == cachedValue.user_id);
 
-            if (cached_value.challenge_id == challenge.Id)
+            if (cachedValue.challenge_id == contestChallengeId)
             {
-                var time_finished = cached_value.time_finished;
-                var time_remaining = time_finished - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                if (time_remaining < 0) time_remaining = 0;
-
-
+                var timeRemaining = cachedValue.time_finished - DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                if (timeRemaining < 0) timeRemaining = 0;
                 return new BaseResponseDTO<ChallengeByIdDTO>
                 {
                     HttpStatusCode = HttpStatusCode.OK,
-                    Message = $"Challenge was started by: {user_chal.Name}",
+                    Message = $"Challenge was started by: {userChal?.Name}",
                     Data = new ChallengeByIdDTO
                     {
-                        challenge = challenge_data,
+                        challenge = challengeData,
                         is_started = true,
-                        challenge_url = cached_value.challenge_url,
-                        time_remaining = time_remaining,
-                        pod_status = cached_value.status
+                        challenge_url = cachedValue.challenge_url,
+                        time_remaining = timeRemaining,
+                        pod_status = cachedValue.status
                     }
                 };
             }
-
-
         }
+
         return new BaseResponseDTO<ChallengeByIdDTO>
         {
             HttpStatusCode = HttpStatusCode.OK,
-            Data = new ChallengeByIdDTO
-            {
-                success = true,
-                challenge = challenge_data,
-                is_started = false
-            }
+            Data = new ChallengeByIdDTO { success = true, challenge = challengeData, is_started = false }
         };
     }
 
-    public async Task<List<ChallengeByCategoryDTO>> GetChallengeByCategories(string category_name, int? team_id)
+    public async Task<List<ChallengeByCategoryDTO>> GetChallengeByCategories(string category_name, int teamId, int contestId)
     {
-        var challenges = await _dbContext.Challenges
+        var contestChallenges = await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Where(c => c.Category == category_name &&
-                        c.State != Enums.ChallengeState.HIDDEN)
+            .Include(c => c.BankChallenge)
+            .Where(c => c.ContestId == contestId
+                && c.State != "hidden"
+                && c.BankChallenge != null
+                && c.BankChallenge.Category == category_name)
             .Select(c => new
             {
                 c.Id,
@@ -286,120 +250,116 @@ public class ChallengeService : IChallengeService
                 c.NextId,
                 c.MaxAttempts,
                 c.Value,
-                c.Category,
                 c.TimeLimit,
                 c.ConnectionProtocol,
-                c.Type,
-                c.Requirements,
                 c.RequireDeploy,
-                c.Difficulty
+                c.BankId,
+                BankName = c.BankChallenge!.Name,
+                BankCategory = c.BankChallenge.Category,
+                BankType = c.BankChallenge.Type,
+                BankRequirements = c.BankChallenge.Requirements,
+                BankDifficulty = c.BankChallenge.Difficulty,
+                BankConnectionProtocol = c.BankChallenge.ConnectionProtocol,
             })
             .ToListAsync();
 
-        var topics_data = new List<ChallengeByCategoryDTO>();
         var difficultyVisible = _configHelper.GetConfig<string>("challenge_difficulty_visibility", "disabled") == "enabled";
 
-        var solvedChallengeIds = team_id.HasValue
-                ? (await _dbContext.Solves
-                    .AsNoTracking()
-                    .Where(s => s.TeamId == team_id.Value && s.ChallengeId.HasValue)
-                    .Select(s => s.ChallengeId!.Value)
-                    .ToListAsync())
-                    .ToHashSet()
-                : [];
+        var solvedBankIds = teamId > 0
+            ? (await _dbContext.Solves
+                .AsNoTracking()
+                .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                .Select(s => s.ContestChallenge.BankId!.Value)
+                .ToListAsync()).ToHashSet()
+            : new HashSet<int>();
 
-        var allChallengeIds = (await _dbContext.Challenges
+        var solvedCcIds = teamId > 0
+            ? (await _dbContext.Solves
+                .AsNoTracking()
+                .Where(s => s.ContestId == contestId && s.TeamId == teamId)
+                .Select(s => s.ContestChallengeId)
+                .ToListAsync()).ToHashSet()
+            : new HashSet<int>();
+
+        var allBankIds = (await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Select(c => c.Id)
-            .ToListAsync())
-            .ToHashSet();
+            .Where(c => c.ContestId == contestId && c.BankId.HasValue)
+            .Select(c => c.BankId!.Value)
+            .ToListAsync()).ToHashSet();
 
-        var deployChallenges = challenges
-            .Where(c => c.RequireDeploy && team_id.HasValue)
-            .Select(c => ChallengeHelper.GetCacheKey(c.Id, team_id!.Value))
+        var deployKeys = contestChallenges
+            .Where(c => c.RequireDeploy && teamId > 0)
+            .Select(c => ChallengeHelper.GetCacheKey(contestId, c.Id, teamId))
             .ToList();
 
-        var deploymentCaches = deployChallenges.Count != 0
-            ? await _redisHelper.GetManyAsync<ChallengeDeploymentCacheDTO>(deployChallenges)
-            : [];
+        var deploymentCaches = deployKeys.Count != 0
+            ? await _redisHelper.GetManyAsync<ChallengeDeploymentCacheDTO>(deployKeys)
+            : new Dictionary<string, ChallengeDeploymentCacheDTO?>();
 
-        foreach (var challenge in challenges)
+        var result = new List<ChallengeByCategoryDTO>();
+
+        foreach (var cc in contestChallenges)
         {
-            var requirementsObj = TryParseRequirements(challenge.Requirements, challenge.Id, team_id);
+            var requirementsObj = TryParseRequirements(cc.BankRequirements, cc.Id, teamId);
+            var isUnlocked = IsUnlockedByPrerequisites(requirementsObj, solvedBankIds, allBankIds);
+            if (!isUnlocked && requirementsObj?.anonymize != true) continue;
 
-            var isUnlocked = IsUnlockedByPrerequisites(requirementsObj, solvedChallengeIds, allChallengeIds);
-            if (!isUnlocked && requirementsObj?.anonymize != true)
-            {
-                // hidden behavior when not unlocked: do not show challenge in listing.
-                continue;
-            }
-
-            // Check pod status if challenge requires deployment
             string? podStatus = null;
-            if (challenge.RequireDeploy && team_id.HasValue)
+            if (cc.RequireDeploy && teamId > 0)
             {
-                var key = ChallengeHelper.GetCacheKey(challenge.Id, team_id.Value);
+                var key = ChallengeHelper.GetCacheKey(contestId, cc.Id, teamId);
                 if (deploymentCaches.TryGetValue(key, out var cache))
                     podStatus = cache?.status;
             }
 
-            topics_data.Add(new ChallengeByCategoryDTO
+            result.Add(new ChallengeByCategoryDTO
             {
-                id = challenge.Id,
-                name = challenge.Name ?? string.Empty,
-                next_id = challenge.NextId,
-                max_attempts = challenge.MaxAttempts,
-                value = challenge.Value,
-                category = challenge.Category,
-                time_limit = challenge.TimeLimit,
-                connection_protocol = string.IsNullOrWhiteSpace(challenge.ConnectionProtocol) ? "http" : challenge.ConnectionProtocol,
-                type = challenge.Type,
+                id = cc.Id,
+                name = cc.Name ?? cc.BankName ?? string.Empty,
+                next_id = cc.NextId,
+                max_attempts = cc.MaxAttempts,
+                value = cc.Value,
+                category = cc.BankCategory,
+                time_limit = cc.TimeLimit,
+                connection_protocol = string.IsNullOrWhiteSpace(cc.ConnectionProtocol)
+                    ? (cc.BankConnectionProtocol ?? "http")
+                    : cc.ConnectionProtocol,
+                type = cc.BankType,
                 requirements = requirementsObj,
-                solve_by_myteam = solvedChallengeIds.Contains(challenge.Id),
+                solve_by_myteam = solvedCcIds.Contains(cc.Id),
                 pod_status = podStatus,
-                difficulty = difficultyVisible ? challenge.Difficulty : null,
+                difficulty = difficultyVisible ? cc.BankDifficulty : null,
             });
         }
 
-        return topics_data;
+        return result;
     }
 
-    public async Task<List<TopicDTO>> GetTopic(User user)
+    public async Task<List<TopicDTO>> GetTopic(int teamId, int contestId)
     {
-        var challengeStats = await _dbContext.Challenges
+        var challengeStats = await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Where(c => c.State != Enums.ChallengeState.HIDDEN)
-            .GroupBy(c => c.Category)
-            .Select(g => new
-            {
-                Category = g.Key!,
-                Total = g.Count()
-            })
+            .Where(c => c.ContestId == contestId && c.State != "hidden" && c.BankChallenge != null)
+            .GroupBy(c => c.BankChallenge!.Category)
+            .Select(g => new { Category = g.Key!, Total = g.Count() })
             .ToListAsync();
-
 
         var solvedStats = await _dbContext.Solves
             .AsNoTracking()
-            .Where(s => s.TeamId == user.TeamId &&
-                        s.Challenge.State != Enums.ChallengeState.HIDDEN)
-            .GroupBy(s => s.Challenge.Category)
-            .Select(g => new
-            {
-                Category = g.Key!,
-                Solved = g.Select(x => x.ChallengeId).Distinct().Count()
-            })
+            .Where(s => s.ContestId == contestId && s.TeamId == teamId
+                && s.ContestChallenge != null
+                && s.ContestChallenge.State != "hidden"
+                && s.ContestChallenge.BankChallenge != null)
+            .GroupBy(s => s.ContestChallenge.BankChallenge!.Category)
+            .Select(g => new { Category = g.Key!, Solved = g.Select(x => x.ContestChallengeId).Distinct().Count() })
             .ToListAsync();
 
         var solvedDict = solvedStats.ToDictionary(x => x.Category, x => x.Solved);
-
         var topics = new List<TopicDTO>(challengeStats.Count);
 
         foreach (var stat in challengeStats)
         {
-            var solved = solvedDict.TryGetValue(stat.Category, out var s)
-                ? s
-                : 0;
-
+            var solved = solvedDict.TryGetValue(stat.Category, out var s) ? s : 0;
             topics.Add(new TopicDTO
             {
                 topic_name = stat.Category,
@@ -410,36 +370,34 @@ public class ChallengeService : IChallengeService
         return topics;
     }
 
-    public async Task<ChallengeDeployResponeDTO> ChallengeStart(Challenge challenge, User user)
+    public async Task<ChallengeDeployResponeDTO> ChallengeStart(ContestsChallenge cc, Challenge bank, User user, int teamId, int contestId)
     {
         try
         {
             var unixTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            var parammeters = new ChallengeStartStopReqDTO
+            var parameters = new ChallengeStartStopReqDTO
             {
-                challengeId = challenge.Id,
-                teamId = user.TeamId.Value,
+                challengeId = bank.Id,
+                contestChallengeId = cc.Id,
+                contestId = contestId,
+                teamId = teamId,
                 userId = user.Id,
                 unixTime = unixTime.ToString()
             };
             var data = new Dictionary<string, string>
             {
-                { "challengeId", challenge.Id.ToString() },
-                { "teamId", user.TeamId.Value.ToString() },
+                { "challengeId", bank.Id.ToString() },
+                { "teamId", teamId.ToString() },
                 { "userId", user.Id.ToString() },
             };
-            string generatedSecretKey = SecretKeyHelper.CreateSecretKey(unixTime, data);
-
-            var headers = new Dictionary<string, string>
-            {
-                { "SecretKey", generatedSecretKey }
-            };
+            string secretKey = SecretKeyHelper.CreateSecretKey(unixTime, data);
+            var headers = new Dictionary<string, string> { { "SecretKey", secretKey } };
 
             var body = await _multiServiceConnector.ExecuteRequest(
                 ContestantBEConfigHelper.DeploymentCenterAPI,
                 "/api/challenge/start",
                 Method.Post,
-                parammeters,
+                parameters,
                 headers);
 
             if (body == null)
@@ -462,7 +420,6 @@ public class ChallengeService : IChallengeService
                 };
             }
             return result;
-
         }
         catch (HttpRequestException ex)
         {
@@ -476,7 +433,7 @@ public class ChallengeService : IChallengeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, user?.Id, user?.TeamId, new { challengeId = challenge.Id });
+            _logger.LogError(ex, user?.Id, teamId, new { bankChallengeId = bank.Id, contestChallengeId = cc.Id });
             return new ChallengeDeployResponeDTO
             {
                 status = (int)HttpStatusCode.InternalServerError,
@@ -486,19 +443,17 @@ public class ChallengeService : IChallengeService
         }
     }
 
-    public async Task<ChallengeDeployResponeDTO> ForceStopChallenge(int challengeId, User user)
+    public async Task<ChallengeDeployResponeDTO> ForceStopChallenge(int contestChallengeId, int teamId, User user, int contestId)
     {
-        if (user?.TeamId == null)
-        {
+        if (teamId <= 0)
             return new ChallengeDeployResponeDTO
             {
                 status = (int)HttpStatusCode.BadRequest,
                 success = false,
                 message = "User team not found"
             };
-        }
 
-        var lockKey = $"challenge:stop:team:{user.TeamId.Value}:challenge:{challengeId}";
+        var lockKey = $"challenge:stop:team:{teamId}:challenge:{contestChallengeId}";
         var lockToken = Guid.NewGuid().ToString("N");
         var lockExpiry = TimeSpan.FromSeconds(30);
         var lockAcquired = false;
@@ -506,50 +461,45 @@ public class ChallengeService : IChallengeService
         var unixTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var data = new Dictionary<string, string>
         {
-            { "challengeId", challengeId.ToString() },
-            { "teamId", user?.TeamId?.ToString() ?? string.Empty},
+            { "challengeId", contestChallengeId.ToString() },
+            { "teamId", teamId.ToString() },
         };
-        var parammeters = new ChallengeStartStopReqDTO
+        var parameters = new ChallengeStartStopReqDTO
         {
-            challengeId = challengeId,
-            teamId = user.TeamId.Value,
+            challengeId = contestChallengeId,
+            contestChallengeId = contestChallengeId,
+            contestId = contestId,
+            teamId = teamId,
             unixTime = unixTime.ToString()
         };
         var secretKey = SecretKeyHelper.CreateSecretKey(unixTime, data);
-        var headers = new Dictionary<string, string>
-        {
-            { "SecretKey", secretKey }
-        };
+        var headers = new Dictionary<string, string> { { "SecretKey", secretKey } };
 
         try
         {
             lockAcquired = await _redisLockHelper.AcquireLock(lockKey, lockToken, lockExpiry);
             if (!lockAcquired)
-            {
                 return new ChallengeDeployResponeDTO
                 {
                     status = (int)HttpStatusCode.Conflict,
                     success = false,
                     message = "Stop challenge request is already in progress"
                 };
-            }
 
-            var cacheKey = ChallengeHelper.GetCacheKey(challengeId, user.TeamId.Value);
+            var cacheKey = ChallengeHelper.GetCacheKey(contestId, contestChallengeId, teamId);
             if (!await _redisHelper.KeyExistsAsync(cacheKey))
-            {
                 return new ChallengeDeployResponeDTO
                 {
                     status = (int)HttpStatusCode.BadRequest,
                     success = false,
                     message = "Challenge not started or already stopped"
                 };
-            }
 
             var body = await _multiServiceConnector.ExecuteRequest(
                 ContestantBEConfigHelper.DeploymentCenterAPI,
                 "/api/challenge/stop",
                 Method.Post,
-                parammeters,
+                parameters,
                 headers);
 
             if (body == null)
@@ -585,7 +535,7 @@ public class ChallengeService : IChallengeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, user?.Id, user?.TeamId, new { challengeId });
+            _logger.LogError(ex, user?.Id, teamId, new { contestChallengeId });
             return new ChallengeDeployResponeDTO
             {
                 status = (int)HttpStatusCode.InternalServerError,
@@ -595,51 +545,41 @@ public class ChallengeService : IChallengeService
         }
         finally
         {
-            if (lockAcquired)
-            {
-                await _redisLockHelper.ReleaseLock(lockKey, lockToken);
-            }
+            if (lockAcquired) await _redisLockHelper.ReleaseLock(lockKey, lockToken);
         }
     }
 
-    public async Task<List<ChallengeInstanceDTO>> GetAllInstances(int teamId)
+    public async Task<List<ChallengeInstanceDTO>> GetAllInstances(int teamId, int contestId)
     {
         var deployments = await _redisHelper
-            .GetCacheByPatternAsync<ChallengeDeploymentCacheDTO>($"deploy_challenge_*_{teamId}");
+            .GetCacheByPatternAsync<ChallengeDeploymentCacheDTO>($"contest:{contestId}:deploy_challenge_*_{teamId}");
 
-        if (deployments.Count == 0)
-            return [];
+        if (deployments.Count == 0) return [];
 
-        var challengeIds = deployments
-            .Select(x => x.challenge_id)
-            .Distinct()
-            .ToList();
+        var contestChallengeIds = deployments.Select(x => x.challenge_id).Distinct().ToList();
 
-        var challenges = await _dbContext.Challenges
+        var contestChallenges = await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Where(c => challengeIds.Contains(c.Id))
+            .Where(c => contestChallengeIds.Contains(c.Id) && c.ContestId == contestId)
             .Select(c => new
             {
                 c.Id,
-                c.Name,
-                c.Category
+                EffectiveName = c.Name ?? (c.BankChallenge != null ? c.BankChallenge.Name : null),
+                Category = c.BankChallenge != null ? c.BankChallenge.Category : null
             })
             .ToListAsync();
 
-        var challengeDict = challenges.ToDictionary(c => c.Id);
-
+        var ccDict = contestChallenges.ToDictionary(c => c.Id);
         var result = new List<ChallengeInstanceDTO>(deployments.Count);
 
         foreach (var instance in deployments)
         {
-            if (!challengeDict.TryGetValue(instance.challenge_id, out var challenge))
-                continue;
-
+            if (!ccDict.TryGetValue(instance.challenge_id, out var cc)) continue;
             result.Add(new ChallengeInstanceDTO
             {
                 challenge_id = instance.challenge_id,
-                challenge_name = challenge.Name ?? string.Empty,
-                category = challenge.Category ?? string.Empty,
+                challenge_name = cc.EffectiveName ?? string.Empty,
+                category = cc.Category ?? string.Empty,
                 status = instance.status ?? string.Empty,
                 challenge_url = instance.challenge_url ?? "N/A",
                 ready = instance.ready,
@@ -649,16 +589,14 @@ public class ChallengeService : IChallengeService
         return result;
     }
 
-    public async Task<ChallengeDeployResponeDTO> CheckChallengeStart(int challengeId, int teamId)
+    public async Task<ChallengeDeployResponeDTO> CheckChallengeStart(int contestChallengeId, int teamId, int contestId)
     {
         try
         {
-            var deploymentKey = ChallengeHelper.GetCacheKey(challengeId, teamId);
-
+            var deploymentKey = ChallengeHelper.GetCacheKey(contestId, contestChallengeId, teamId);
             var deploymentCache = await _redisHelper.GetFromCacheAsync<ChallengeDeploymentCacheDTO>(deploymentKey);
 
             if (deploymentCache == null)
-            {
                 return new ChallengeDeployResponeDTO
                 {
                     success = false,
@@ -666,14 +604,12 @@ public class ChallengeService : IChallengeService
                     status = (int)HttpStatusCode.OK,
                     pod_status = Enums.DeploymentStatusEnum.NOT_FOUND,
                 };
-            }
 
-            var challenge = await _dbContext.Challenges
+            var cc = await _dbContext.ContestsChallenges
                 .AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == challengeId);
+                .FirstOrDefaultAsync(c => c.Id == contestChallengeId && c.ContestId == contestId);
 
-            if (challenge == null)
-            {
+            if (cc == null)
                 return new ChallengeDeployResponeDTO
                 {
                     success = false,
@@ -681,20 +617,17 @@ public class ChallengeService : IChallengeService
                     status = (int)HttpStatusCode.NotFound,
                     pod_status = Enums.DeploymentStatusEnum.Failed
                 };
-            }
 
             if (deploymentCache.status == Enums.DeploymentStatus.PENDING_DEPLOY)
-            {
                 return new ChallengeDeployResponeDTO
                 {
                     success = false,
-                    message = "Challenge is waitting to deploy",
+                    message = "Challenge is waiting to deploy",
                     status = (int)HttpStatusCode.OK,
                     pod_status = Enums.DeploymentStatusEnum.PENDING_DEPLOY
                 };
-            }
+
             if (deploymentCache.status == Enums.DeploymentStatus.PENDING)
-            {
                 return new ChallengeDeployResponeDTO
                 {
                     success = false,
@@ -702,32 +635,27 @@ public class ChallengeService : IChallengeService
                     status = (int)HttpStatusCode.OK,
                     pod_status = Enums.DeploymentStatusEnum.Pending
                 };
-            }
-            if (deploymentCache.status == Enums.DeploymentStatus.RUNING && deploymentCache.ready)
-            {
 
-                var result = new ChallengeDeployResponeDTO
+            if (deploymentCache.status == Enums.DeploymentStatus.RUNING && deploymentCache.ready)
+                return new ChallengeDeployResponeDTO
                 {
                     status = (int)HttpStatusCode.OK,
                     success = true,
                     message = "Pod is running.",
                     challenge_url = deploymentCache.challenge_url,
-                    time_limit = challenge.TimeLimit ?? -1,
+                    time_limit = cc.TimeLimit ?? -1,
                     pod_status = Enums.DeploymentStatusEnum.Running
                 };
-                return result;
-            }
+
             if (deploymentCache.status == Enums.DeploymentStatus.DELETING)
-            {
-                var result = new ChallengeDeployResponeDTO
+                return new ChallengeDeployResponeDTO
                 {
                     status = (int)HttpStatusCode.OK,
                     success = true,
                     message = "Pod is deleting.",
                     pod_status = Enums.DeploymentStatusEnum.Deleting
                 };
-                return result;
-            }
+
             return new ChallengeDeployResponeDTO
             {
                 success = false,
@@ -738,7 +666,7 @@ public class ChallengeService : IChallengeService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, null, teamId, new { challengeId });
+            _logger.LogError(ex, null, teamId, new { contestChallengeId });
             return new ChallengeDeployResponeDTO
             {
                 success = false,

@@ -254,9 +254,10 @@ public class RedisHelper
         string challengeId,
         long maxLimit,
         string deploymentValue,
-        int provisioningTtl = 300)
+        int provisioningTtl = 300,
+        int contestId = 0)
     {
-        var zsetKey = ChallengeHelper.GetZSetKKey(int.Parse(teamId));
+        var zsetKey = ChallengeHelper.GetZSetKKey(contestId, int.Parse(teamId));
 
         // Score tạm thời = Hiện tại + 5 phút
         // Nếu sau 5 phút Worker không gia hạn, Redis tự coi là hết hạn và cho phép ghi đè.
@@ -327,10 +328,10 @@ public class RedisHelper
     /// <param name="challengeId">ID bài thi (Unique ID trong ZSET)</param>
     /// <param name="realTtlSeconds">Thời gian sống thực tế (ví dụ 7200s = 2h)</param>
     /// <param name="deploymentValue">Data JSON cập nhật mới (tránh race condition)</param>
-    public async Task<bool> AtomicUpdateExpiration(string teamId, string deploymentKey, string challengeId, int realTtlSeconds, string? deploymentValue = null)
+    public async Task<bool> AtomicUpdateExpiration(string teamId, string deploymentKey, string challengeId, int realTtlSeconds, string? deploymentValue = null, int contestId = 0)
     {
         var teamIdInt = int.Parse(teamId);
-        var zsetKey = ChallengeHelper.GetZSetKKey(teamIdInt);
+        var zsetKey = ChallengeHelper.GetZSetKKey(contestId, teamIdInt);
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var realExpiryScore = now + realTtlSeconds;
@@ -402,9 +403,9 @@ public class RedisHelper
     /// - Start bị lỗi (Rollback).
     /// - Worker phát hiện Pod Crash/Deleted.
     /// </summary>
-    public async Task<bool> AtomicRemoveDeploymentZSet(string teamId, string deploymentKey, string challengeId)
+    public async Task<bool> AtomicRemoveDeploymentZSet(string teamId, string deploymentKey, string challengeId, int contestId = 0)
     {
-        var zsetKey = ChallengeHelper.GetZSetKKey(int.Parse(teamId));
+        var zsetKey = ChallengeHelper.GetZSetKKey(contestId, int.Parse(teamId));
 
         var script = @"
                     local zsetKey = KEYS[1]

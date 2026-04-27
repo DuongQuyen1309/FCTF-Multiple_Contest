@@ -8,103 +8,53 @@ namespace ResourceShared.Utils
 {
     public static class DynamicChallengeHelper
     {
-        /// <summary>
-        /// Get solve count for a challenge, excluding hidden and banned accounts
-        /// Matches Python: get_solve_count(challenge)
-        /// </summary>
-        private static async Task<int> GetSolveCount(AppDbContext context, int challengeId)
+        private static async Task<int> GetSolveCount(AppDbContext context, int contestChallengeId, int contestId)
         {
-            var solveCount = await context.Solves
+            return await context.Solves
                 .Join(context.Users,
                     solve => solve.UserId,
                     user => user.Id,
                     (solve, user) => new { solve, user })
-                .Where(x => x.solve.ChallengeId == challengeId 
-                    && x.user.Hidden == false 
+                .Where(x => x.solve.ContestChallengeId == contestChallengeId
+                    && x.solve.ContestId == contestId
+                    && x.user.Hidden == false
                     && x.user.Banned == false)
                 .CountAsync();
-
-            return solveCount;
         }
 
-        /// <summary>
-        /// Linear decay function
-        /// value = initial - (decay * (solve_count - 1))
-        /// </summary>
         private static int Linear(DynamicChallenge dynamicChallenge, int solveCount)
         {
-            // If the solve count is 0 we shouldn't manipulate the solve count
-            if (solveCount != 0)
-            {
-                // We subtract -1 to allow the first solver to get max point value
-                solveCount -= 1;
-            }
-
+            if (solveCount != 0) solveCount -= 1;
             int value = (dynamicChallenge.Initial ?? 0) - ((dynamicChallenge.Decay ?? 0) * solveCount);
-            
-            // Ceiling
             value = (int)Math.Ceiling((double)value);
-
-            if (value < dynamicChallenge.Minimum)
-            {
-                value = dynamicChallenge.Minimum ?? 0;
-            }
-
+            if (value < dynamicChallenge.Minimum) value = dynamicChallenge.Minimum ?? 0;
             return value;
         }
 
-        /// <summary>
-        /// Logarithmic decay function (matching Python implementation)
-        /// value = ((minimum - initial) / (decay^2)) * (solve_count^2) + initial
-        /// </summary>
         private static int Logarithmic(DynamicChallenge dynamicChallenge, int solveCount)
         {
-            // If the solve count is 0 we shouldn't manipulate the solve count
-            if (solveCount != 0)
-            {
-                // We subtract -1 to allow the first solver to get max point value
-                solveCount -= 1;
-            }
-
-            // Handle situations where admins have entered a 0 decay
-            // This is invalid as it can cause a division by zero
+            if (solveCount != 0) solveCount -= 1;
             int decay = dynamicChallenge.Decay ?? 1;
-            if (decay == 0)
-            {
-                decay = 1;
-            }
-
+            if (decay == 0) decay = 1;
             int initial = dynamicChallenge.Initial ?? 0;
             int minimum = dynamicChallenge.Minimum ?? 0;
-
-            // Important: Use floating point for math calculations
             double decaySquared = Math.Pow(decay, 2);
             double solveCountSquared = Math.Pow(solveCount, 2);
-            
             double value = ((minimum - initial) / decaySquared) * solveCountSquared + initial;
-            
-            // Ceiling
             int finalValue = (int)Math.Ceiling(value);
-
-            if (finalValue < minimum)
-            {
-                finalValue = minimum;
-            }
-
+            if (finalValue < minimum) finalValue = minimum;
             return finalValue;
         }
 
-        /// <summary>
-        /// Recalculate dynamic challenge value after a solve
-        /// </summary>
         public static async Task<int> RecalculateDynamicChallengeValue(
-            AppDbContext context, 
-            int challengeId,
+            AppDbContext context,
+            int contestChallengeId,
+            int contestId,
             RedisLockHelper? redisLockHelper = null)
         {
             try
             {
-                string lockKey = $"challenge:dynamic:recalc:{challengeId}";
+                string lockKey = $"challenge:dynamic:recalc:{contestId}:{contestChallengeId}";
                 string lockToken = Guid.NewGuid().ToString();
                 bool lockAcquired = redisLockHelper == null;
                 if (redisLockHelper != null)
@@ -114,19 +64,13 @@ namespace ResourceShared.Utils
                     bool timeoutLogged = false;
                     while (!lockAcquired)
                     {
-                        lockAcquired = await redisLockHelper.AcquireLock(
-                            lockKey,
-                            lockToken,
-                            TimeSpan.FromSeconds(10));
+                        lockAcquired = await redisLockHelper.AcquireLock(lockKey, lockToken, TimeSpan.FromSeconds(10));
                         if (!lockAcquired)
                         {
-                            if (DateTime.UtcNow - lockWaitStart > lockWaitTimeout)
+                            if (DateTime.UtcNow - lockWaitStart > lockWaitTimeout && !timeoutLogged)
                             {
-                                if (!timeoutLogged)
-                                {
-                                    await Console.Error.WriteLineAsync($"[DynamicChallengeHelper] Lock wait exceeded for challenge {challengeId}, continuing to wait.");
-                                    timeoutLogged = true;
-                                }
+                                await Console.Error.WriteLineAsync($"[DynamicChallengeHelper] Lock wait exceeded for cc {contestChallengeId}, continuing.");
+                                timeoutLogged = true;
                             }
                             await Task.Delay(100);
                         }
@@ -135,47 +79,30 @@ namespace ResourceShared.Utils
 
                 try
                 {
-                var challenge = await context.Challenges
-                    .Include(c => c.DynamicChallenge)
-                    .FirstOrDefaultAsync(c => c.Id == challengeId);
-                
-                if (challenge == null || challenge.DynamicChallenge == null)
-                {
-                    return challenge?.Value ?? 0;
-                }
-                
-                var dynamicChallenge = challenge.DynamicChallenge;
-                
-                // Count number of solves (excluding hidden and banned users)
-                var solveCount = await GetSolveCount(context, challengeId);
-                
-                  
-                // Calculate new value based on function type
-                int newValue;
-                string function = dynamicChallenge.Function ?? "logarithmic";
-                
-                switch (function.ToLower())
-                {
-                    case "linear":
-                        newValue = Linear(dynamicChallenge, solveCount);
-                        break;
-                    
-                    case "logarithmic":
-                    default:
-                        newValue = Logarithmic(dynamicChallenge, solveCount);
-                        break;
-                }
-                
-                challenge.Value = newValue;
-                await context.SaveChangesAsync();
-                return newValue;
+                    var cc = await context.ContestsChallenges
+                        .Include(c => c.BankChallenge!.DynamicChallenge)
+                        .FirstOrDefaultAsync(c => c.Id == contestChallengeId);
+
+                    if (cc?.BankChallenge?.DynamicChallenge == null)
+                        return cc?.Value ?? 0;
+
+                    var dynamicChallenge = cc.BankChallenge.DynamicChallenge;
+                    var solveCount = await GetSolveCount(context, contestChallengeId, contestId);
+
+                    string function = dynamicChallenge.Function ?? "logarithmic";
+                    int newValue = function.ToLower() == "linear"
+                        ? Linear(dynamicChallenge, solveCount)
+                        : Logarithmic(dynamicChallenge, solveCount);
+
+                    cc.Value = newValue;
+                    context.ContestsChallenges.Update(cc);
+                    await context.SaveChangesAsync();
+                    return newValue;
                 }
                 finally
                 {
                     if (redisLockHelper != null && lockAcquired)
-                    {
                         await redisLockHelper.ReleaseLock(lockKey, lockToken);
-                    }
                 }
             }
             catch (Exception ex)

@@ -8,6 +8,8 @@ namespace ResourceShared.DTOs.Auth
         public int id { get; set; }
         public string username { get; set; } = string.Empty;
         public string email { get; set; } = string.Empty;
+        public string type { get; set; } = "user"; // admin | teacher | user
+        public int contestId { get; set; }
         public TeamResponse? team { get; set; }
         [JsonIgnore]
         public string token { get; set; } = string.Empty;
@@ -17,6 +19,7 @@ namespace ResourceShared.DTOs.Auth
     {
         public int userId { get; set; }
         public int teamId { get; set; }
+        public int contestId { get; set; }
     }
     public class TeamResponse
     {

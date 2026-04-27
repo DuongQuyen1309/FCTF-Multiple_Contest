@@ -80,14 +80,14 @@ namespace ResourceShared.Utils
             return challenge.Description;
         }
 
-        public static string GetCacheKey(int challengeId, int teamId)
+        public static string GetCacheKey(int contestId, int contestChallengeId, int teamId)
         {
-            return $"deploy_challenge_{challengeId}_{teamId}";
+            return $"contest:{contestId}:deploy_challenge_{contestChallengeId}_{teamId}";
         }
 
-        public static string GetZSetKKey(int teamId)
+        public static string GetZSetKKey(int contestId, int teamId)
         {
-            return $"active_deploys_team_{teamId}";
+            return $"contest:{contestId}:active_deploys_team_{teamId}";
         }
 
         public static string GenerateChallengeToken(
@@ -125,43 +125,47 @@ namespace ResourceShared.Utils
         //     return BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
         // }
 
-        public static string GetDeploymentAppName(int teamId, int challengeId, string challengeName)
+        /// <summary>
+        /// Namespace/app name format: team-{teamId}-{contestId}-{contestChallengeId}-{challName}-{date}
+        /// </summary>
+        public static string GetDeploymentAppName(int teamId, int contestId, int contestChallengeId, string challengeName)
         {
             var date = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var challName = ParseAlphaNumeric(challengeName);
             teamId = teamId == -1 ? 0 : teamId;
             string srtTeamId = teamId == -2 ? "shared" : null;
 
-            if(!string.IsNullOrEmpty(srtTeamId))
-            {
-                return $"team-{srtTeamId}-{challengeId}-{challName}-{date}".ToLower().Replace(" ", "-");
-            }
+            if (!string.IsNullOrEmpty(srtTeamId))
+                return $"team-{srtTeamId}-{contestId}-{contestChallengeId}-{challName}-{date}".ToLower().Replace(" ", "-");
 
-            return $"team-{teamId}-{challengeId}-{challName}-{date}".ToLower().Replace(" ", "-");
+            return $"team-{teamId}-{contestId}-{contestChallengeId}-{challName}-{date}".ToLower().Replace(" ", "-");
         }
 
-        public static (int teamId, int challengeId) ParseDeploymentAppName(string appName)
+        /// <summary>
+        /// Parses the namespace/app name back into (teamId, contestId, contestChallengeId).
+        /// Format: team-{teamId}-{contestId}-{contestChallengeId}-{challName}-{date}
+        /// </summary>
+        public static (int teamId, int contestId, int contestChallengeId) ParseDeploymentAppName(string appName)
         {
             var parts = appName.Split('-', StringSplitOptions.RemoveEmptyEntries);
 
-            if (parts.Length < 3 || !parts[0].StartsWith("team"))
+            if (parts.Length < 4 || !parts[0].StartsWith("team"))
                 throw new ArgumentException("Invalid app name format", nameof(appName));
 
             int teamId;
             if (string.Equals(parts[1], "shared", StringComparison.OrdinalIgnoreCase))
-            {
                 teamId = -2;
-            }
             else if (!int.TryParse(parts[1], out teamId))
-            {
                 throw new FormatException("Invalid teamId in app name");
-            }
 
-            if (!int.TryParse(parts[2], out int challengeId))
-                throw new FormatException("Invalid challengeId in app name");
+            if (!int.TryParse(parts[2], out int contestId))
+                throw new FormatException("Invalid contestId in app name");
+
+            if (!int.TryParse(parts[3], out int contestChallengeId))
+                throw new FormatException("Invalid contestChallengeId in app name");
 
             teamId = teamId == 0 ? -1 : teamId;
-            return (teamId, challengeId);
+            return (teamId, contestId, contestChallengeId);
         }
 
 
@@ -187,8 +191,10 @@ namespace ResourceShared.Utils
         }
 
         public static (object payload, string appName) BuildArgoPayload(
-            Challenge challenge,
+            ContestsChallenge contestChallenge,
             int teamId,
+            int contestId,
+            int contestChallengeId,
             ChallengeImageDTO challengeImage,
             string cpu_limit,
             string cpu_request,
@@ -199,15 +205,16 @@ namespace ResourceShared.Utils
             string pow_difficulty)
         {
             var isTemp = true;
-            if (challenge.TimeLimit.HasValue && challenge.TimeLimit.Value <= 0)
+            var timeLimit = contestChallenge.TimeLimit ?? 1;
+            if (timeLimit <= 0)
             {
                 //isTemp = false;
 
                 //NOTE: Sau này sẽ fix lại chỗ này để lấy từ tbl config
-                challenge.TimeLimit = 1;
+                timeLimit = 1;
             }
 
-            var deploymentAppName = GetDeploymentAppName(teamId, challenge.Id, challenge.Name);
+            var deploymentAppName = GetDeploymentAppName(teamId, contestId, contestChallengeId, contestChallenge.Name ?? string.Empty);
             var startChallengeTemplate = Environment.GetEnvironmentVariable("START_CHALLENGE_TEMPLATE")
                 ?? throw new InvalidOperationException("Missing START_CHALLENGE_TEMPLATE");
             return (new
@@ -229,7 +236,7 @@ namespace ResourceShared.Utils
                         $"USE_GVISOR={use_gvisor.ToString().ToLower()}",
                         $"HARDEN_CONTAINER={harden_container.ToString().ToLower()}",
                         $"IS_TEMPORARY={isTemp.ToString().ToLower()}",
-                        $"CHALLENGE_TIMEOUT={challenge.TimeLimit++}m",
+                        $"CHALLENGE_TIMEOUT={timeLimit}m",
                         $"POW_DIFFICULTY_SECONDS={pow_difficulty}"
                     }
                 }

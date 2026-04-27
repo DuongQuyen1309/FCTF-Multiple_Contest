@@ -13,32 +13,42 @@ public class TeamService : ITeamService
     private readonly AppDbContext _context;
     private readonly ScoreHelper _scoreHelper;
     private readonly AppLogger _logger;
+    private readonly ContestContext _contestContext;
 
     public TeamService(
         AppDbContext context,
         ScoreHelper scoreHelper,
-        AppLogger logger)
+        AppLogger logger,
+        ContestContext contestContext)
     {
         _context = context;
         _scoreHelper = scoreHelper;
         _logger = logger;
+        _contestContext = contestContext;
     }
 
     public async Task<TeamScoreDTO?> GetTeamScore(int userId)
     {
         try
         {
-            var team = await _context.Teams
-                .AsNoTracking()
-                .Include(t => t.Users)
-                .FirstOrDefaultAsync(t => t.Users.Any(u => u.Id == userId));
+            var team = await _context.GetUserTeamInContest(userId, _contestContext.ContestId);
             var bracketId = team?.BracketId;
             if (team == null) return null;
 
-            var usersScore = await _scoreHelper.GetUsersScore(team.Users, true);
+            // Get team members
+            var teamMemberIds = await _context.Set<UserTeam>()
+                .Where(ut => ut.TeamId == team.Id)
+                .Select(ut => ut.UserId)
+                .ToListAsync();
+
+            var teamMembers = await _context.Users
+                .Where(u => teamMemberIds.Contains(u.Id))
+                .ToListAsync();
+
+            var usersScore = await _scoreHelper.GetUsersScore(teamMembers, true);
 
             var members = new List<TeamMemberDTO>();
-            foreach (var u in team.Users)
+            foreach (var u in teamMembers)
             {
                 _ = usersScore.TryGetValue(u, out int score);
                 members.Add(new TeamMemberDTO
@@ -49,15 +59,15 @@ public class TeamService : ITeamService
                 });
             }
 
-            var challenges = await _context.Challenges
+            var challenges = await _context.ContestsChallenges
                 .AsNoTracking()
-                .Where(c => c.State == "visible")
+                .Where(c => c.ContestId == _contestContext.ContestId && c.State == "visible")
                 .Select(c => new { c.Value })
                 .ToListAsync();
 
             var totalTeamsQuery = _context.Teams
                 .AsNoTracking()
-                .Where(t => t.Banned == false && t.Hidden == false);
+                .Where(t => t.ContestId == _contestContext.ContestId && t.Banned == false && t.Hidden == false);
             if (bracketId.HasValue)
                 totalTeamsQuery = totalTeamsQuery.Where(t => t.BracketId == bracketId.Value);
             var totalTeams = await totalTeamsQuery.CountAsync();
@@ -83,10 +93,7 @@ public class TeamService : ITeamService
     {
         try
         {
-            var team = await _context.Teams
-                .AsNoTracking()
-                .Include(t => t.Users)
-                .FirstOrDefaultAsync(t => t.Users.Any(u => u.Id == userId));
+            var team = await _context.GetUserTeamInContest(userId, _contestContext.ContestId);
 
             if (team == null) return [];
 
@@ -94,13 +101,13 @@ public class TeamService : ITeamService
                 .Select(s => new SubmissionDto
                 {
                     Id = s.Id,
-                    ChallengeId = s.ChallengeId,
+                    ChallengeId = s.ContestChallengeId,
                     Challenge = new ChallengeDto
                     {
-                        Id = s?.Challenge?.Id ?? default,
-                        Name = s?.Challenge?.Name ?? string.Empty,
-                        Category = s?.Challenge?.Category ?? string.Empty,
-                        Value = s?.Challenge?.Value
+                        Id = s?.ContestChallenge?.Id ?? default,
+                        Name = s?.ContestChallenge?.Name ?? string.Empty,
+                        Category = s?.ContestChallenge?.BankChallenge?.Category ?? string.Empty,
+                        Value = s?.ContestChallenge?.Value
                     },
                     User = new UserDto
                     {
@@ -109,8 +116,8 @@ public class TeamService : ITeamService
                     },
                     Team = new TeamDto
                     {
-                        Id = s?.User?.Team?.Id ?? default,
-                        Name = s?.User?.Team?.Name ?? string.Empty,
+                        Id = team.Id,
+                        Name = team.Name ?? string.Empty,
                     },
                     Date = s.IdNavigation.Date,
                     Type = s.IdNavigation.Type,

@@ -146,4 +146,30 @@ public class AuthController : BaseController
             message = result.Message
         });
     }
+
+    [HttpPost("select-contest")]
+    [Authorize]
+    public async Task<IActionResult> SelectContest([FromBody] SelectContestDTO dto)
+    {
+        var userId = UserContext.UserId;
+
+        var result = await _authService.SelectContest(userId, dto);
+
+        if (!result.Success)
+        {
+            return BadRequest(new
+            {
+                message = result.Message
+            });
+        }
+
+        _userBehaviorLogger.Log("SELECT_CONTEST", userId, result.Data?.TeamId, new { contestId = dto.ContestId });
+        await Console.Out.WriteLineAsync($"[Auth] User {userId} selected contest {dto.ContestId}");
+
+        return Ok(new
+        {
+            message = result.Message,
+            data = result.Data
+        });
+    }
 }

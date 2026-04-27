@@ -104,6 +104,8 @@ builder.Services.AddScoped<IChallengeService, ChallengeService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IActionLogsServices, ActionLogsServices>();
 builder.Services.AddScoped<IUserContext, UserContext>();
+builder.Services.AddScoped<IContestService, ContestService>();
+builder.Services.AddScoped<ContestContext>(); // Add ContestContext
 // DI services from ResourceShared
 builder.Services.AddResourceShared();
 
@@ -140,6 +142,7 @@ app.UseOutputCache();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<TokenAuthenticationMiddleware>();
+app.UseMiddleware<ContestantBE.Middlewares.ContestContextMiddleware>(); // Add ContestContext middleware
 app.MapHealthChecks("/healthcheck");
 app.MapHealthChecks("/healthz");
 app.MapControllers();
