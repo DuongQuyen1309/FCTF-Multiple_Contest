@@ -122,8 +122,12 @@
                         }}</span>
                     {% endif %}
                     <a href="{{ url_for('admin.contest_edit', contest_id=contest.id) }}"
-                        class="btn btn-sm btn-outline-secondary">
+                        class="btn btn-sm btn-outline-secondary mr-2">
                         <i class="bx bx-edit"></i> Edit contest
+                    </a>
+                    <a href="{{ url_for('admin.contest_challenges', contest_id=contest.id) }}"
+                        class="btn btn-sm btn-primary">
+                        <i class="bx bx-book"></i> Manage Challenges
                     </a>
                 </div>
             </div>
@@ -150,15 +154,9 @@
                     {% endif %}
                 </div>
             </div>
-
             <div class="col-md-8 mb-4">
-                <div class="graph-container h-100">
-                    <div class="graph-title">Solves Over Time</div>
-                    <div id="solves-graph" class="d-flex align-items-center">
-                        <div class="text-center w-100">
-                            <i class="fas fa-circle-notch fa-spin fa-3x fa-fw spinner"></i>
-                        </div>
-                    </div>
+                <div class="graph-container h-100 d-flex align-items-center justify-content-center">
+                    <p class="text-muted">Charts require built assets. Run <code>yarn build</code> in <code>CTFd/themes/admin</code> to enable.</p>
                 </div>
             </div>
         </div>

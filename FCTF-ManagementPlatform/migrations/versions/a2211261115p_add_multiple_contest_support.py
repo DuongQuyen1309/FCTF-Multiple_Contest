@@ -72,7 +72,7 @@ import sqlalchemy as sa
 # Revision identifiers
 # ---------------------------------------------------------------------------
 revision = "a2211261115p"
-down_revision = "e9a1c2d3f4b5"
+down_revision = "b7c8d9e0f1a2"
 branch_labels = None
 depends_on = None
 

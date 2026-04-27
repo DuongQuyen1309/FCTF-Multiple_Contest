@@ -424,10 +424,10 @@
     $('#addChalModal').on('show.bs.modal', function () {
         $('#bankList').html('<p class="text-center text-muted">Loading...</p>');
         selected.clear(); updateCount();
-        fetch(BANK_URL + '?format=json', { headers: { 'CSRF-Token': init.csrfNonce } })
+        fetch(BANK_URL + '?format=json')
             .then(r => r.json())
             .then(data => { bankData = data.challenges || []; renderBank(bankData); })
-            .catch(() => $('#bankList').html('<p class="text-center text-danger">Failed to load challenges from bank.</p>'));
+            .catch(err => { console.error('Bank load error:', err); $('#bankList').html('<p class="text-center text-danger">Failed to load challenges from bank.</p>'); });
     });
 
     function renderBank(list) {
@@ -435,11 +435,13 @@
         let html = '<table class="table table-sm table-hover"><thead><tr><th width="30"></th><th>Name</th><th>Category</th><th>Difficulty</th><th>Value</th></tr></thead><tbody>';
         list.forEach(c => {
             const checked = selected.has(c.id) ? 'checked' : '';
+            {% raw %}
             html += `<tr class="bank-row" data-id="${c.id}" style="cursor:pointer">
                 <td><input type="checkbox" class="bank-cb" data-id="${c.id}" ${checked}></td>
                 <td>${c.name}</td><td>${c.category || '—'}</td>
                 <td>${c.difficulty_label || '—'}</td><td>${c.value || 0} pts</td>
             </tr>`;
+            {% endraw %}
         });
         html += '</tbody></table>';
         $('#bankList').html(html); updateCount();
@@ -470,9 +472,12 @@
     $('#addSelectedBtn').on('click', function () {
         if (!selected.size) return;
         $(this).prop('disabled', true).text('Adding...');
+        const nonce = document.querySelector('meta[name="csrf-token"]')?.content
+                   || document.querySelector('input[name="nonce"]')?.value
+                   || '';
         fetch(ADD_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'CSRF-Token': init.csrfNonce },
+            headers: { 'Content-Type': 'application/json', 'CSRF-Token': nonce },
             body: JSON.stringify({ bank_ids: [...selected] })
         })
             .then(r => r.json())

@@ -59,7 +59,95 @@ def _contest_json(c: Contest) -> dict:
     }
 
 
-# ── Listing (JSON) ─────────────────────────────────────────────────────────────
+# ── Listing (HTML) ────────────────────────────────────────────────────────────
+
+@admin.route("/admin/contests")
+@admins_only
+def contests_listing():
+    q = request.args.get("q", "").strip()
+    state = request.args.get("state", "").strip()
+    semester_id = request.args.get("semester_id", "").strip()
+    page = abs(request.args.get("page", 1, type=int))
+
+    semesters = Semester.query.order_by(Semester.semester_name).all()
+
+    query = Contest.query
+    if q:
+        query = query.filter(
+            db.or_(Contest.name.ilike(f"%{q}%"), Contest.slug.ilike(f"%{q}%"))
+        )
+    if state:
+        query = query.filter(Contest.state == state)
+    if semester_id:
+        sem = Semester.query.get(semester_id)
+        if sem:
+            query = query.filter(Contest.semester_name == sem.semester_name)
+
+    contests = query.order_by(Contest.created_at.desc()).paginate(
+        page=page, per_page=20, error_out=False
+    )
+
+    args = dict(request.args)
+    args.pop("page", None)
+    prev_page = url_for("admin.contests_listing", page=contests.prev_num, **args) if contests.has_prev else "#"
+    next_page = url_for("admin.contests_listing", page=contests.next_num, **args) if contests.has_next else "#"
+
+    return render_template(
+        "admin/contests/listing.html",
+        contests=contests,
+        semesters=semesters,
+        q=q,
+        state=state,
+        semester_id=semester_id,
+        prev_page=prev_page,
+        next_page=next_page,
+    )
+
+
+@admin.route("/admin/contests/new", methods=["GET", "POST"])
+@admins_only
+def contest_new_standalone():
+    semesters = Semester.query.order_by(Semester.semester_name).all()
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            flash("Tên contest không được trống.", "danger")
+            return render_template("admin/contests/new.html", semesters=semesters)
+
+        slug = _unique_slug(request.form.get("slug", "") or name)
+
+        semester_name = None
+        sem_id = request.form.get("semester_id", "").strip()
+        if sem_id:
+            sem = Semester.query.get(sem_id)
+            if sem:
+                semester_name = sem.semester_name
+
+        from CTFd.utils.user import get_current_user
+        owner = get_current_user()
+
+        contest = Contest(
+            name=name,
+            description=request.form.get("description", "").strip() or None,
+            slug=slug,
+            semester_name=semester_name,
+            owner_id=owner.id if owner else None,
+            state=request.form.get("state", "hidden"),
+            user_mode=request.form.get("user_mode", "users"),
+            start_time=_parse_dt("start_time"),
+            end_time=_parse_dt("end_time"),
+            freeze_scoreboard_at=_parse_dt("freeze_scoreboard_at"),
+        )
+        db.session.add(contest)
+        db.session.commit()
+        flash(f"Đã tạo contest '{contest.name}'.", "success")
+        return redirect(url_for("admin.contest_dashboard", contest_id=contest.id))
+
+    return render_template("admin/contests/new.html", semesters=semesters)
+
+
+# ── Listing (JSON API) ─────────────────────────────────────────────────────────
 
 @admin.route("/admin/api/contests")
 @admins_only

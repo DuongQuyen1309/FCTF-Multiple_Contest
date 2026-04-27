@@ -43,10 +43,8 @@ class ChallengeSolveStatistics(Resource):
     @admin_or_challenge_writer_only_or_jury
     def get(self):
         chals = (
-            Challenges.query.filter(
-                and_(Challenges.state != "hidden", Challenges.state != "locked")
-            )
-            .order_by(Challenges.value)
+            Challenges.query
+            .order_by(Challenges.id)
             .all()
         )
 
@@ -96,10 +94,8 @@ class ChallengeSolvePercentages(Resource):
             Challenges.query.add_columns(
                 Challenges.id,
                 Challenges.name,
-                Challenges.state,
-                Challenges.max_attempts,
             )
-            .order_by(Challenges.value)
+            .order_by(Challenges.id)
             .all()
         )
 
@@ -347,7 +343,6 @@ class ChallengeAnalytics(Resource):
                 Challenges.id,
                 Challenges.name,
                 Challenges.category,
-                Challenges.max_attempts,
                 solves_sub.c.solve_count,
                 solves_sub.c.avg_solve_seconds,
                 fails_sub.c.wrong_attempts,
@@ -359,16 +354,16 @@ class ChallengeAnalytics(Resource):
                 solvers_used_hints_sub.c.solvers_used_hints,
                 first_solve_sub.c.first_solve_date,
             )
-            .outerjoin(solves_sub, Challenges.id == solves_sub.c.challenge_id)
-            .outerjoin(fails_sub, Challenges.id == fails_sub.c.challenge_id)
-            .outerjoin(attempts_sub, Challenges.id == attempts_sub.c.challenge_id)
+            .join(ContestsChallenges, ContestsChallenges.bank_id == Challenges.id)
+            .outerjoin(solves_sub, ContestsChallenges.id == solves_sub.c.contest_challenge_id)
+            .outerjoin(fails_sub, ContestsChallenges.id == fails_sub.c.contest_challenge_id)
+            .outerjoin(attempts_sub, ContestsChallenges.id == attempts_sub.c.contest_challenge_id)
             .outerjoin(hint_usage_sub, Challenges.id == hint_usage_sub.c.challenge_id)
             .outerjoin(hint_count_sub, Challenges.id == hint_count_sub.c.challenge_id)
             .outerjoin(solver_hint_usage_sub, Challenges.id == solver_hint_usage_sub.c.challenge_id)
             .outerjoin(solvers_used_hints_sub, Challenges.id == solvers_used_hints_sub.c.challenge_id)
-            .outerjoin(first_solve_sub, Challenges.id == first_solve_sub.c.challenge_id)
-            .filter(and_(Challenges.state != "hidden", Challenges.state != "locked"))
-            .filter(Challenges.id.in_([cc.bank_id for cc in ContestsChallenges.query.filter_by(contest_id=contest_id).all()]) if contest_id else db.true())
+            .outerjoin(first_solve_sub, ContestsChallenges.id == first_solve_sub.c.contest_challenge_id)
+            .filter(ContestsChallenges.contest_id == contest_id if contest_id else db.true())
             .order_by(Challenges.category, Challenges.name)
             .all()
         )
@@ -432,16 +427,8 @@ class ChallengeAnalytics(Resource):
                 if first_solve_seconds < 0:
                     first_solve_seconds = 0
 
-            max_attempts = int(chal.max_attempts or 0)
+            max_attempts = 0
             cap_pressure_pct = None
-            if max_attempts > 0 and attempter_count > 0:
-                cap_pressure_pct = round(
-                    min(
-                        100.0,
-                        float(total_attempts) / (float(attempter_count) * float(max_attempts)) * 100.0,
-                    ),
-                    1,
-                )
 
             if attempter_count == 0:
                 difficulty_index = 0.0
@@ -500,7 +487,6 @@ class ChallengeAnalytics(Resource):
             .filter(
                 Model.banned == False,
                 Model.hidden == False,
-                and_(Challenges.state != "hidden", Challenges.state != "locked"),
                 *time_filters(Solves.date)
             )
             .group_by(Challenges.category)
@@ -509,7 +495,6 @@ class ChallengeAnalytics(Resource):
 
         categories = (
             db.session.query(Challenges.category)
-            .filter(and_(Challenges.state != "hidden", Challenges.state != "locked"))
             .distinct()
             .all()
         )

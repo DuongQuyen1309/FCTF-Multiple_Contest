@@ -11,6 +11,7 @@ from CTFd.admin import admin
 from CTFd.models import Users, db
 from CTFd.models import Contests as Contest, ContestParticipants as ContestParticipant, Semester
 from CTFd.utils.decorators import admins_only
+from CTFd.plugins import bypass_csrf_protection
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -103,7 +104,6 @@ def semester_edit(semester_id):
             flash("Tên kỳ học không được trống.", "danger")
             return redirect(url_for("admin.semester_edit", semester_id=sem.id))
 
-        # Kiểm tra trùng tên (trừ chính nó)
         conflict = Semester.query.filter(
             Semester.semester_name == new_name,
             Semester.id != sem.id
@@ -120,6 +120,14 @@ def semester_edit(semester_id):
                 return datetime.datetime.fromisoformat(val)
             except ValueError:
                 return fallback
+
+        old_name = sem.semester_name
+
+        # Cập nhật contests trước khi đổi tên semester (tránh FK constraint)
+        if new_name != old_name:
+            Contest.query.filter_by(semester_name=old_name).update(
+                {"semester_name": new_name}, synchronize_session=False
+            )
 
         sem.semester_name = new_name
         sem.start_time = _parse_dt("start_time", sem.start_time)
@@ -394,6 +402,7 @@ def contest_challenges(contest_id):
 
 @admin.route("/admin/contests/<int:contest_id>/challenges/add", methods=["POST"])
 @admins_only
+@bypass_csrf_protection
 def contest_challenge_add(contest_id):
     contest = Contest.query.get_or_404(contest_id)
     from CTFd.models import ContestsChallenges as ContestChallenge, Challenges as ChallengeBank
