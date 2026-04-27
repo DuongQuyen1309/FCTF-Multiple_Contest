@@ -1,0 +1,289 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <h1><i class="bx bx-trophy"></i> Create Contest</h1>
+    <div class="subtitle">
+        {% if semester %}
+        <a href="{{ url_for('admin.hub_contests', semester_id=semester.id) }}"
+           style="color:var(--primary-orange); text-decoration:none;">
+            <i class="bx bx-arrow-back"></i> Back to {{ semester.semester_name }}
+        </a>
+        {% else %}
+        <a href="{{ url_for('admin.hub_semesters') }}"
+           style="color:var(--primary-orange); text-decoration:none;">
+            <i class="bx bx-arrow-back"></i> Back to Semesters
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="hub-container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="hub-card p-4">
+                <div id="form-alert" class="hub-alert hub-alert-danger d-none"></div>
+                <div id="form-success" class="hub-alert hub-alert-success d-none"></div>
+
+                <form id="contest-form">
+                    <!-- Basic info -->
+                    <div class="mb-3" style="font-weight:700; font-size:0.8rem; text-transform:uppercase; color:var(--text-medium); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+                        Basic Information
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-7">
+                            <div class="hub-form-group">
+                                <label for="name">Contest Name <span class="text-danger">*</span></label>
+                                <input type="text" id="name" name="name"
+                                       class="hub-form-control" placeholder="e.g. CTF Finals HK1 2024"
+                                       maxlength="255" required>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <div class="hub-form-group">
+                                <label for="slug">Slug <span class="text-danger">*</span></label>
+                                <input type="text" id="slug" name="slug"
+                                       class="hub-form-control" placeholder="e.g. ctf-finals-hk1-2024"
+                                       maxlength="100" required>
+                                <small>Unique URL identifier (lowercase, hyphens)</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="hub-form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description"
+                                  class="hub-form-control" rows="3"
+                                  style="height:auto;" placeholder="Contest description..."></textarea>
+                    </div>
+
+                    <!-- Semester + Mode -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="hub-form-group">
+                                <label for="semester_id">Semester</label>
+                                <select id="semester_id" name="semester_id" class="hub-form-control">
+                                    <option value="">— No semester —</option>
+                                    {% for s in semesters %}
+                                    <option value="{{ s.id }}" data-name="{{ s.semester_name }}"
+                                        {% if semester and s.id == semester.id %}selected{% endif %}>
+                                        {{ s.semester_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="hub-form-group">
+                                <label for="state">State</label>
+                                <select id="state" name="state" class="hub-form-control">
+                                    <option value="draft">Draft</option>
+                                    <option value="visible">Visible</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="ended">Ended</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="hub-form-group">
+                                <label for="user_mode">User Mode</label>
+                                <select id="user_mode" name="user_mode" class="hub-form-control">
+                                    <option value="users">Users</option>
+                                    <option value="teams">Teams</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Timing -->
+                    <div class="mb-3 mt-1" style="font-weight:700; font-size:0.8rem; text-transform:uppercase; color:var(--text-medium); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+                        Schedule
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="start_time">Start Time</label>
+                                <input type="datetime-local" id="start_time" name="start_time"
+                                       class="hub-form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="end_time">End Time</label>
+                                <input type="datetime-local" id="end_time" name="end_time"
+                                       class="hub-form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="freeze_scoreboard_at">Freeze Scoreboard</label>
+                                <input type="datetime-local" id="freeze_scoreboard_at"
+                                       name="freeze_scoreboard_at" class="hub-form-control">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Participants import -->
+                    <div class="mb-3 mt-1" style="font-weight:700; font-size:0.8rem; text-transform:uppercase; color:var(--text-medium); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+                        Import Participants (Optional)
+                    </div>
+
+                    <div class="hub-form-group">
+                        <label for="participants_file">Excel File (.xlsx / .xls)</label>
+                        <input type="file" id="participants_file" name="participants_file"
+                               class="hub-form-control" accept=".xlsx,.xls"
+                               style="height:auto; padding:6px;">
+                        <small>
+                            File cần có cột <code>email</code> chứa email thí sinh.
+                            Nếu email chưa có trong hệ thống sẽ tự động tạo tài khoản.
+                        </small>
+                    </div>
+
+                    <!-- Import result preview -->
+                    <div id="import-result" class="d-none">
+                        <div class="hub-alert hub-alert-info">
+                            <strong>Import Result:</strong>
+                            <span id="import-summary"></span>
+                            <div id="import-errors" class="mt-1" style="font-size:0.8rem; color:#721c24;"></div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        {% if semester %}
+                        <a href="{{ url_for('admin.hub_contests', semester_id=semester.id) }}" class="hub-btn">Cancel</a>
+                        {% else %}
+                        <a href="{{ url_for('admin.hub_semesters') }}" class="hub-btn">Cancel</a>
+                        {% endif %}
+                        <button type="submit" class="hub-btn hub-btn-primary" id="submit-btn">
+                            <i class="bx bx-save"></i> Create Contest
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-generate slug from name
+document.getElementById('name').addEventListener('input', function() {
+    var slug = this.value
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w\s-]/g, '')
+        .replace(/[\s_]+/g, '-')
+        .replace(/-+/g, '-');
+    document.getElementById('slug').value = slug;
+});
+
+document.getElementById('contest-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var btn = document.getElementById('submit-btn');
+    var alertEl = document.getElementById('form-alert');
+    var successEl = document.getElementById('form-success');
+    alertEl.classList.add('d-none');
+    successEl.classList.add('d-none');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bx bx-loader-alt bx-spin"></i> Creating...';
+
+    var semesterSelect = document.getElementById('semester_id');
+    var semesterName = semesterSelect.selectedIndex > 0
+        ? semesterSelect.options[semesterSelect.selectedIndex].getAttribute('data-name')
+        : null;
+
+    var startTime = document.getElementById('start_time').value;
+    var endTime = document.getElementById('end_time').value;
+    var freezeTime = document.getElementById('freeze_scoreboard_at').value;
+
+    var payload = {
+        name: document.getElementById('name').value.trim(),
+        slug: document.getElementById('slug').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        semester_name: semesterName,
+        state: document.getElementById('state').value,
+        user_mode: document.getElementById('user_mode').value,
+        start_time: startTime ? startTime + ':00' : null,
+        end_time: endTime ? endTime + ':00' : null,
+        freeze_scoreboard_at: freezeTime ? freezeTime + ':00' : null,
+    };
+
+    if (!payload.name || !payload.slug) {
+        showError('Name and slug are required.');
+        return;
+    }
+
+    // Step 1: Create contest
+    fetch('/api/v1/contests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'CSRF-Token': init.csrfNonce },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (!data.success) {
+            showError(data.message || 'Failed to create contest.');
+            return;
+        }
+
+        var contestId = data.data.id;
+        var fileInput = document.getElementById('participants_file');
+
+        // Step 2: Import participants if file provided
+        if (fileInput.files.length > 0) {
+            btn.innerHTML = '<i class="bx bx-loader-alt bx-spin"></i> Importing participants...';
+            var formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('role', 'contestant');
+
+            fetch('/api/v1/contests/' + contestId + '/participants/import', {
+                method: 'POST',
+                headers: { 'CSRF-Token': init.csrfNonce },
+                body: formData
+            })
+            .then(r => r.json())
+            .then(importData => {
+                if (importData.success) {
+                    var s = importData.data.summary;
+                    var msg = 'Created: ' + s.created_count + ', Existing: ' + s.existing_count;
+                    if (s.error_count > 0) msg += ', Errors: ' + s.error_count;
+                    document.getElementById('import-summary').textContent = msg;
+                    if (importData.data.errors && importData.data.errors.length > 0) {
+                        var errHtml = importData.data.errors.slice(0, 5).map(function(e) {
+                            return 'Row ' + e.row + ' (' + e.email + '): ' + e.error;
+                        }).join('<br>');
+                        document.getElementById('import-errors').innerHTML = errHtml;
+                    }
+                    document.getElementById('import-result').classList.remove('d-none');
+                }
+                redirectAfterSuccess(contestId, semesterSelect);
+            })
+            .catch(() => redirectAfterSuccess(contestId, semesterSelect));
+        } else {
+            redirectAfterSuccess(contestId, semesterSelect);
+        }
+    })
+    .catch(e => showError('Network error: ' + e));
+
+    function showError(msg) {
+        alertEl.textContent = msg;
+        alertEl.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bx bx-save"></i> Create Contest';
+    }
+
+    function redirectAfterSuccess(contestId, semesterSelect) {
+        // Redirect back to semester contests page
+        var semId = semesterSelect.value;
+        if (semId) {
+            window.location.href = '/admin/hub/semesters/' + semId + '/contests';
+        } else {
+            window.location.href = '{{ url_for("admin.hub_semesters") }}';
+        }
+    }
+});
+</script>
+{% endblock %}

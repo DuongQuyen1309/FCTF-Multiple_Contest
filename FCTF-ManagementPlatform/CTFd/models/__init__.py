@@ -5,7 +5,7 @@ from flask_marshmallow import Marshmallow
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import column_property, validates
+from sqlalchemy.orm import column_property, synonym, validates
 
 from CTFd.cache import cache
 

@@ -1,7 +1,7 @@
 from sqlalchemy.sql.expression import union_all
 
 from CTFd.cache import cache
-from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, Solves, Teams, Users, db
+from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, ContestsChallenges, Solves, Teams, Users, db
 from CTFd.utils import get_config
 from CTFd.utils.dates import unix_time_to_utc
 from CTFd.utils.modes import get_model
@@ -25,12 +25,12 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.account_id.label("account_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.account_id)
     )
 
@@ -147,12 +147,12 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.team_id.label("team_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.team_id)
     )
 
@@ -240,12 +240,12 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.user_id.label("user_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.user_id)
     )
 

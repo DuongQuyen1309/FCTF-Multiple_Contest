@@ -1,0 +1,165 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <h1><i class="bx bx-user"></i> Users</h1>
+    <div class="subtitle">Toàn bộ người dùng trong hệ thống multiple contest</div>
+</div>
+
+<div class="hub-container">
+    <!-- Filter bar -->
+    <div class="hub-filter-bar">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label>Search Field</label>
+                <select name="field" class="hub-form-control">
+                    <option value="name"  {% if field == 'name'  %}selected{% endif %}>Name</option>
+                    <option value="email" {% if field == 'email' %}selected{% endif %}>Email</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" class="hub-form-control"
+                       placeholder="Search users...">
+            </div>
+            <div class="col-md-2">
+                <label>Role</label>
+                <select name="role" class="hub-form-control">
+                    <option value="">All Roles</option>
+                    <option value="user"             {% if role_filter == 'user'             %}selected{% endif %}>User</option>
+                    <option value="admin"            {% if role_filter == 'admin'            %}selected{% endif %}>Admin</option>
+                    <option value="challenge_writer" {% if role_filter == 'challenge_writer' %}selected{% endif %}>Challenge Writer</option>
+                    <option value="jury"             {% if role_filter == 'jury'             %}selected{% endif %}>Jury</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label>Verified</label>
+                <select name="verified" class="hub-form-control">
+                    <option value="">All</option>
+                    <option value="true"  {% if verified_filter == 'true'  %}selected{% endif %}>Verified</option>
+                    <option value="false" {% if verified_filter == 'false' %}selected{% endif %}>Not Verified</option>
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="hub-btn hub-btn-primary flex-grow-1">
+                    <i class="bx bx-search"></i> Search
+                </button>
+                <a href="{{ url_for('admin.hub_users') }}" class="hub-btn" title="Reset">
+                    <i class="bx bx-refresh"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info bar -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted" style="font-size:0.82rem;">
+            {{ users.total }} user(s) found
+        </span>
+        <a href="{{ url_for('admin.users_new') }}" class="hub-btn hub-btn-sm hub-btn-primary">
+            <i class="bx bx-user-plus"></i> New User
+        </a>
+    </div>
+
+    <!-- Table -->
+    <div class="hub-table-wrapper">
+        <table class="table hub-table mb-0">
+            <thead>
+                <tr>
+                    <th style="width:50px;">#</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th class="text-center">Verified</th>
+                    <th class="text-center">Hidden</th>
+                    <th class="text-center">Banned</th>
+                    <th class="text-center" style="width:100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users.items %}
+                <tr onclick="location.href='{{ url_for('admin.users_detail', user_id=user.id) }}'">
+                    <td class="text-muted" style="font-size:0.8rem;">{{ user.id }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.users_detail', user_id=user.id) }}" onclick="event.stopPropagation()">
+                            <strong>{{ user.name }}</strong>
+                        </a>
+                    </td>
+                    <td style="font-size:0.82rem; color:var(--text-light);">{{ user.email }}</td>
+                    <td>
+                        {% if user.type == 'admin' %}
+                        <span class="hub-badge-status hub-badge-ended">Admin</span>
+                        {% elif user.type == 'challenge_writer' %}
+                        <span class="hub-badge-status hub-badge-paused">Writer</span>
+                        {% elif user.type == 'jury' %}
+                        <span class="hub-badge-status hub-badge-info">Jury</span>
+                        {% else %}
+                        <span class="hub-badge-status hub-badge-draft">User</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if user.verified %}
+                        <span class="hub-badge-status hub-badge-visible" style="font-size:0.7rem;">✓</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if user.hidden %}
+                        <span class="hub-badge-status hub-badge-paused" style="font-size:0.7rem;">Hidden</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if user.banned %}
+                        <span class="hub-badge-status hub-badge-ended" style="font-size:0.7rem;">Banned</span>
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('admin.users_detail', user_id=user.id) }}"
+                           class="hub-btn hub-btn-sm" title="Edit user">
+                            <i class="bx bx-edit"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="8" class="text-center py-4 text-muted">
+                        <i class="bx bx-user" style="font-size:2rem; display:block; margin-bottom:8px;"></i>
+                        No users found.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if users.pages > 1 %}
+    <div class="hub-pagination">
+        <a href="{{ prev_page }}" class="hub-page-btn {% if not users.has_prev %}disabled{% endif %}">
+            <i class="bx bx-chevron-left"></i> Prev
+        </a>
+        {% for page_num in users.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+            {% if page_num %}
+            <a href="{{ url_for('admin.hub_users', page=page_num, q=q, field=field, role=role_filter, verified=verified_filter) }}"
+               class="hub-page-btn {% if page_num == users.page %}active{% endif %}">
+                {{ page_num }}
+            </a>
+            {% else %}
+            <span class="hub-page-btn disabled">…</span>
+            {% endif %}
+        {% endfor %}
+        <a href="{{ next_page }}" class="hub-page-btn {% if not users.has_next %}disabled{% endif %}">
+            Next <i class="bx bx-chevron-right"></i>
+        </a>
+        <span class="text-muted ms-2" style="font-size:0.8rem;">
+            Page {{ users.page }} / {{ users.pages }}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

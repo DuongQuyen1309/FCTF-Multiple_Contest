@@ -1,0 +1,156 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <h1><i class="bx bx-calendar"></i> Semesters</h1>
+    <div class="subtitle">Quản lý các kỳ học trong hệ thống</div>
+</div>
+
+<div class="hub-container">
+    <!-- Stats row -->
+    <div class="row mb-3" style="gap: 0;">
+        <div class="col-md-3 pe-2">
+            <div class="hub-stat-card">
+                <div class="stat-value">{{ semesters|length }}</div>
+                <div class="stat-label">Total Semesters</div>
+            </div>
+        </div>
+        <div class="col-md-3 pe-2">
+            <div class="hub-stat-card">
+                <div class="stat-value">{{ semesters|sum(attribute='contest_count') }}</div>
+                <div class="stat-label">Total Contests</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action bar -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="text-muted" style="font-size:0.85rem;">{{ semesters|length }} semester(s) found</span>
+        <a href="{{ url_for('admin.hub_semester_new') }}" class="hub-btn hub-btn-primary">
+            <i class="bx bx-plus"></i> Create Semester
+        </a>
+    </div>
+
+    <!-- Table -->
+    <div class="hub-table-wrapper">
+        <table class="table hub-table mb-0">
+            <thead>
+                <tr>
+                    <th style="width:50px;">#</th>
+                    <th>Semester Name</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th class="text-center">Contests</th>
+                    <th class="text-center" style="width:140px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="semesters-tbody">
+                {% for s in semesters %}
+                <tr onclick="location.href='{{ url_for('admin.hub_contests', semester_id=s.id) }}'">
+                    <td class="text-muted" style="font-size:0.8rem;">{{ s.id }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.hub_contests', semester_id=s.id) }}" onclick="event.stopPropagation()">
+                            <strong>{{ s.semester_name }}</strong>
+                        </a>
+                    </td>
+                    <td>
+                        {% if s.start_time %}
+                            <span class="hub-badge-status hub-badge-info">{{ s.start_time.strftime('%d/%m/%Y') }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if s.end_time %}
+                            <span class="hub-badge-status hub-badge-orange">{{ s.end_time.strftime('%d/%m/%Y') }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <span class="hub-badge-status hub-badge-info">{{ s.contest_count }}</span>
+                    </td>
+                    <td class="text-center" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('admin.hub_contests', semester_id=s.id) }}"
+                           class="hub-btn hub-btn-sm me-1" title="View contests">
+                            <i class="bx bx-list-ul"></i>
+                        </a>
+                        <button class="hub-btn hub-btn-sm hub-btn-danger"
+                                onclick="deleteSemester({{ s.id }}, '{{ s.semester_name }}')"
+                                title="Delete semester">
+                            <i class="bx bx-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">
+                        <i class="bx bx-calendar" style="font-size:2rem; display:block; margin-bottom:8px;"></i>
+                        No semesters yet.
+                        <a href="{{ url_for('admin.hub_semester_new') }}" class="text-decoration-none" style="color:var(--primary-orange);">Create the first one</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content" style="border-radius:8px; border:1px solid var(--border-light);">
+            <div class="modal-header" style="border-bottom:1px solid var(--border-light); padding:0.75rem 1rem;">
+                <h6 class="modal-title fw-bold">Delete Semester</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="font-size:0.875rem;">
+                Delete semester <strong id="delete-name"></strong>?
+                <div class="text-danger mt-1" style="font-size:0.8rem;">This will also delete all associated contests.</div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--border-light); padding:0.5rem 1rem; gap:8px;">
+                <button class="hub-btn hub-btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="hub-btn hub-btn-sm hub-btn-danger" id="confirm-delete-btn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var deleteModal = null;
+var deleteSemesterId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    document.getElementById('confirm-delete-btn').addEventListener('click', doDelete);
+});
+
+function deleteSemester(id, name) {
+    deleteSemesterId = id;
+    document.getElementById('delete-name').textContent = name;
+    deleteModal.show();
+}
+
+function doDelete() {
+    fetch('/api/v1/semesters/' + deleteSemesterId, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'CSRF-Token': init.csrfNonce,
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            deleteModal.hide();
+            location.reload();
+        } else {
+            alert('Delete failed: ' + (data.message || JSON.stringify(data)));
+        }
+    })
+    .catch(e => alert('Error: ' + e));
+}
+</script>
+{% endblock %}

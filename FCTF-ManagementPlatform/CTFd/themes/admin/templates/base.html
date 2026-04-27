@@ -687,6 +687,15 @@
         <div class="d-flex flex-column w-100">
             <ul class="list-unstyled components">
 
+                {% if is_admin() %}
+                <li class="nav-item">
+                    <a class="nav-link" href="{{ url_for('admin.hub_index') }}"
+                       style="background: rgba(255,107,53,0.08); border:1px solid rgba(255,107,53,0.2); margin-bottom:6px;">
+                        <i class="bx bx-home-alt"></i> Management Hub
+                    </a>
+                </li>
+                {% endif %}
+
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('admin.statistics') }}">
                         <i class="bx bx-bar-chart-alt-2"></i> Dashboard

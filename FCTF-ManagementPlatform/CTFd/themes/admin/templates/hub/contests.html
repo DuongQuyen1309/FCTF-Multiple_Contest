@@ -1,0 +1,186 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h1><i class="bx bx-trophy"></i> Contests — {{ semester.semester_name }}</h1>
+            <div class="subtitle">
+                <a href="{{ url_for('admin.hub_semesters') }}" style="color:var(--primary-orange); text-decoration:none;">
+                    <i class="bx bx-arrow-back"></i> Back to Semesters
+                </a>
+                {% if semester.start_time %}
+                &nbsp;|&nbsp; {{ semester.start_time.strftime('%d/%m/%Y') }}
+                {% endif %}
+                {% if semester.end_time %}
+                → {{ semester.end_time.strftime('%d/%m/%Y') }}
+                {% endif %}
+            </div>
+        </div>
+        <a href="{{ url_for('admin.hub_contest_new', semester_id=semester.id) }}" class="hub-btn hub-btn-primary mt-2">
+            <i class="bx bx-plus"></i> Create Contest
+        </a>
+    </div>
+</div>
+
+<div class="hub-container">
+    <!-- Stats -->
+    <div class="row mb-3" style="gap:0;">
+        <div class="col-md-3 pe-2">
+            <div class="hub-stat-card">
+                <div class="stat-value">{{ contests|length }}</div>
+                <div class="stat-label">Contests</div>
+            </div>
+        </div>
+        <div class="col-md-3 pe-2">
+            <div class="hub-stat-card">
+                <div class="stat-value">{{ contests|sum(attribute='participant_count') }}</div>
+                <div class="stat-label">Total Participants</div>
+            </div>
+        </div>
+        <div class="col-md-3 pe-2">
+            <div class="hub-stat-card">
+                <div class="stat-value">{{ contests|selectattr('state', 'equalto', 'visible')|list|length }}</div>
+                <div class="stat-label">Active</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="hub-table-wrapper">
+        <table class="table hub-table mb-0">
+            <thead>
+                <tr>
+                    <th style="width:50px;">#</th>
+                    <th>Contest Name</th>
+                    <th>Slug</th>
+                    <th>State</th>
+                    <th>Mode</th>
+                    <th class="text-center">Participants</th>
+                    <th class="text-center">Challenges</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Owner</th>
+                    <th class="text-center" style="width:120px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in contests %}
+                <tr onclick="location.href='{{ url_for('admin.statistics') }}'">
+                    <td class="text-muted" style="font-size:0.8rem;">{{ c.id }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.statistics') }}" onclick="event.stopPropagation()">
+                            <strong>{{ c.name }}</strong>
+                        </a>
+                    </td>
+                    <td><code style="font-size:0.78rem; color:var(--text-light);">{{ c.slug }}</code></td>
+                    <td>
+                        {% if c.state == 'visible' %}
+                        <span class="hub-badge-status hub-badge-visible">Visible</span>
+                        {% elif c.state == 'draft' %}
+                        <span class="hub-badge-status hub-badge-draft">Draft</span>
+                        {% elif c.state == 'paused' %}
+                        <span class="hub-badge-status hub-badge-paused">Paused</span>
+                        {% elif c.state == 'ended' %}
+                        <span class="hub-badge-status hub-badge-ended">Ended</span>
+                        {% else %}
+                        <span class="hub-badge-status hub-badge-draft">{{ c.state }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="hub-badge-status hub-badge-info">{{ c.user_mode }}</span>
+                    </td>
+                    <td class="text-center">{{ c.participant_count }}</td>
+                    <td class="text-center">{{ c.challenge_count }}</td>
+                    <td style="font-size:0.8rem;">
+                        {{ c.start_time.strftime('%d/%m/%Y %H:%M') if c.start_time else '—' }}
+                    </td>
+                    <td style="font-size:0.8rem;">
+                        {{ c.end_time.strftime('%d/%m/%Y %H:%M') if c.end_time else '—' }}
+                    </td>
+                    <td style="font-size:0.82rem; color:var(--text-light);">{{ c.owner_name }}</td>
+                    <td class="text-center" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('admin.statistics') }}"
+                           class="hub-btn hub-btn-sm me-1" title="Manage contest">
+                            <i class="bx bx-cog"></i>
+                        </a>
+                        <button class="hub-btn hub-btn-sm hub-btn-danger"
+                                onclick="deleteContest({{ c.id }}, '{{ c.name }}')"
+                                title="Delete contest">
+                            <i class="bx bx-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="11" class="text-center py-4 text-muted">
+                        <i class="bx bx-trophy" style="font-size:2rem; display:block; margin-bottom:8px;"></i>
+                        No contests in this semester yet.
+                        <a href="{{ url_for('admin.hub_contest_new', semester_id=semester.id) }}"
+                           style="color:var(--primary-orange); text-decoration:none;">Create the first one</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content" style="border-radius:8px;">
+            <div class="modal-header" style="border-bottom:1px solid var(--border-light); padding:0.75rem 1rem;">
+                <h6 class="modal-title fw-bold">Delete Contest</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="font-size:0.875rem;">
+                Delete contest <strong id="delete-name"></strong>?
+                <div class="text-danger mt-1" style="font-size:0.8rem;">All participants, challenges and submissions will be removed.</div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid var(--border-light); padding:0.5rem 1rem; gap:8px;">
+                <button class="hub-btn hub-btn-sm" data-bs-dismiss="modal">Cancel</button>
+                <button class="hub-btn hub-btn-sm hub-btn-danger" id="confirm-delete-btn">Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var deleteModal = null;
+var deleteContestId = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    document.getElementById('confirm-delete-btn').addEventListener('click', doDelete);
+});
+
+function deleteContest(id, name) {
+    deleteContestId = id;
+    document.getElementById('delete-name').textContent = name;
+    deleteModal.show();
+}
+
+function doDelete() {
+    fetch('/api/v1/contests/' + deleteContestId, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'CSRF-Token': init.csrfNonce,
+        }
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            deleteModal.hide();
+            location.reload();
+        } else {
+            alert('Delete failed: ' + (data.message || JSON.stringify(data)));
+        }
+    })
+    .catch(e => alert('Error: ' + e));
+}
+</script>
+{% endblock %}
