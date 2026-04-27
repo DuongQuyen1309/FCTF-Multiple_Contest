@@ -840,7 +840,7 @@ class Users(db.Model):
     def get_place(self, admin=False, numeric=False, contest_id=None):
         from CTFd.utils.humanize.numbers import ordinalize
         from CTFd.utils.scores import get_user_standings
-        standings = get_user_standings(admin=admin, contest_id=contest_id)
+        standings = get_user_standings(admin=admin)
         for i, user in enumerate(standings):
             if user.user_id == self.id:
                 n = i + 1

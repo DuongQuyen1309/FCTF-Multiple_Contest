@@ -1,7 +1,7 @@
 from sqlalchemy.sql.expression import union_all
 
 from CTFd.cache import cache
-from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, Solves, Teams, Users, db
+from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, ContestsChallenges, Solves, Teams, Users, db
 from CTFd.utils import get_config
 from CTFd.utils.dates import unix_time_to_utc
 from CTFd.utils.modes import get_model
@@ -24,25 +24,25 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
     print(f"Arguments received: admin={admin}")
     scores = (
         db.session.query(
-            Solves.account_id.label("account_id"),
-            db.func.sum(Challenges.value).label("score"),
+            Solves.user_id.label("account_id"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
-        .group_by(Solves.account_id)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != None, ContestsChallenges.value != 0)
+        .group_by(Solves.user_id)
     )
 
     awards = (
         db.session.query(
-            Awards.account_id.label("account_id"),
+            Awards.user_id.label("account_id"),
             db.func.sum(Awards.value).label("score"),
             db.func.max(Awards.id).label("id"),
             db.func.max(Awards.date).label("date"),
         )
         .filter(Awards.value != 0)
-        .group_by(Awards.account_id)
+        .group_by(Awards.user_id)
     )
 
     """
@@ -147,12 +147,12 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.team_id.label("team_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != None, ContestsChallenges.value != 0)
         .group_by(Solves.team_id)
     )
 
@@ -240,12 +240,12 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.user_id.label("user_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != None, ContestsChallenges.value != 0)
         .group_by(Solves.user_id)
     )
 
@@ -285,7 +285,6 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
                 Users.id.label("user_id"),
                 Users.oauth_id.label("oauth_id"),
                 Users.name.label("name"),
-                Users.team_id.label("team_id"),
                 Users.hidden,
                 Users.banned,
                 sumscores.columns.score,
@@ -304,7 +303,6 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
                 Users.id.label("user_id"),
                 Users.oauth_id.label("oauth_id"),
                 Users.name.label("name"),
-                Users.team_id.label("team_id"),
                 sumscores.columns.score,
                 *fields,
             )

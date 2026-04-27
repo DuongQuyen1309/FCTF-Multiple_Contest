@@ -1,9 +1,9 @@
-from flask import render_template, request, url_for
+from flask import render_template, request, url_for, flash, redirect
 from sqlalchemy.sql import not_
 from sqlalchemy import or_
 
 from CTFd.admin import admin
-from CTFd.models import Challenges, Tracking, UserFields, Users
+from CTFd.models import Challenges, Tracking, UserFields, Users, db
 from CTFd.utils import get_config
 from CTFd.utils.decorators import admin_or_jury, admins_only
 from CTFd.utils.modes import TEAMS_MODE
@@ -189,9 +189,42 @@ def users_pending_listing():
     )
 
 
-@admin.route("/admin/users/new")
+@admin.route("/admin/users/new", methods=["GET", "POST"])
 @admins_only
 def users_new():
+    if request.method == "POST":
+        from CTFd.models import Users as UsersModel
+        from CTFd.utils.crypto import hash_password
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "").strip()
+        user_type = request.form.get("type", "user")
+        verified = request.form.get("verified") == "y"
+        hidden = request.form.get("hidden") == "y"
+        banned = request.form.get("banned") == "y"
+
+        if not name or not email or not password:
+            flash("Name, email và password không được trống.", "danger")
+            return redirect(url_for("admin.users_new"))
+
+        if UsersModel.query.filter_by(email=email).first():
+            flash(f"Email '{email}' đã tồn tại.", "danger")
+            return redirect(url_for("admin.users_new"))
+
+        user = UsersModel(
+            name=name,
+            email=email,
+            password=password,
+            type=user_type,
+            verified=verified,
+            hidden=hidden,
+            banned=banned,
+        )
+        db.session.add(user)
+        db.session.commit()
+        flash(f"Đã tạo user '{name}'.", "success")
+        return redirect(url_for("admin.users_detail", user_id=user.id))
+
     return render_template("admin/users/new.html")
 
 

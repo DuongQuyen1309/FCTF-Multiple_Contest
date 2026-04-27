@@ -97,5 +97,6 @@
 {% endblock %}
 
 {% block entrypoint %}
+	{{ Assets.js("assets/js/pages/main.js", theme="admin") }}
 	{{ Assets.js("assets/js/pages/user.js", theme="admin") }}
 {% endblock %}

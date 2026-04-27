@@ -578,6 +578,101 @@ def contest_user_remove(contest_id, user_id):
     return redirect(url_for("admin.contest_users", contest_id=contest_id))
 
 
+@admin.route("/admin/contests/<int:contest_id>/users/import-excel", methods=["POST"])
+@admins_only
+@bypass_csrf_protection
+def contest_users_import_excel(contest_id):
+    """
+    Import users vào contest từ file Excel/CSV.
+    - File cần có cột 'email'
+    - Nếu user đã tồn tại → thêm vào contest_participants
+    - Nếu chưa tồn tại → tạo user mới với email đó → thêm vào contest_participants
+    """
+    import io, secrets, string
+
+    Contest.query.get_or_404(contest_id)
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"success": False, "message": "Không có file."}), 400
+
+    filename = file.filename.lower()
+    emails = []
+
+    try:
+        if filename.endswith(".csv"):
+            import csv
+            content = file.read().decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(content))
+            for row in reader:
+                email = (row.get("email") or row.get("Email") or "").strip().lower()
+                if email:
+                    emails.append(email)
+        else:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file.read()))
+            ws = wb.active
+            headers = [
+                str(c.value).strip().lower() if c.value else ""
+                for c in next(ws.iter_rows(min_row=1, max_row=1))
+            ]
+            if "email" not in headers:
+                return jsonify({"success": False, "message": "Không tìm thấy cột 'email' trong file."}), 400
+            email_col = headers.index("email")
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                val = row[email_col]
+                if val:
+                    emails.append(str(val).strip().lower())
+    except Exception as e:
+        return jsonify({"success": False, "message": f"Lỗi đọc file: {str(e)}"}), 400
+
+    if not emails:
+        return jsonify({"success": False, "message": "Không có email nào trong file."}), 400
+
+    added = skipped = created = 0
+
+    for email in emails:
+        user = Users.query.filter_by(email=email).first()
+
+        if not user:
+            # Tạo user mới với email, name tạm = phần trước @
+            temp_name = email.split("@")[0]
+            temp_pass = "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(16))
+            user = Users(
+                name=temp_name,
+                email=email,
+                password=temp_pass,
+                type="user",
+                verified=False,
+            )
+            db.session.add(user)
+            db.session.flush()  # lấy user.id
+            created += 1
+
+        exists = ContestParticipant.query.filter_by(
+            contest_id=contest_id, user_id=user.id
+        ).first()
+        if exists:
+            skipped += 1
+            continue
+
+        db.session.add(ContestParticipant(
+            contest_id=contest_id,
+            user_id=user.id,
+            role="contestant",
+            score=0,
+        ))
+        added += 1
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "added": added,
+        "created": created,
+        "skipped": skipped,
+    })
+
+
 # ── Contest → Scoreboard ──────────────────────────────────────────────────────
 
 @admin.route("/admin/contests/<int:contest_id>/scoreboard")

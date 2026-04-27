@@ -55,9 +55,14 @@
         </nav>
         <div class="d-flex justify-content-between align-items-center">
             <h1><i class="bx bx-user"></i> Users — {{ contest.name }}</h1>
-            <button class="btn btn-primary" data-toggle="modal" data-target="#importModal">
-                <i class="bx bx-user-plus"></i> Import từ Users tổng
-            </button>
+            <div>
+                <button class="btn btn-outline-success mr-2" data-toggle="modal" data-target="#importExcelModal">
+                    <i class="bx bx-file"></i> Import Excel
+                </button>
+                <button class="btn btn-primary" data-toggle="modal" data-target="#importModal">
+                    <i class="bx bx-user-plus"></i> Import từ Users tổng
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -305,6 +310,34 @@
     {% endif %}
 </div>
 
+{# Modal import Excel #}
+<div class="modal fade" id="importExcelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bx bx-file"></i> Import Users từ Excel</h5>
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted small">
+                    File cần có cột <code>email</code>. Nếu email chưa có trong hệ thống, user mới sẽ được tạo tự động.
+                </p>
+                <div class="form-group">
+                    <label>Chọn file (.xlsx, .xls, .csv)</label>
+                    <input type="file" id="excelFile" class="form-control-file" accept=".xlsx,.xls,.csv">
+                </div>
+                <div id="importExcelResult"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Huỷ</button>
+                <button type="button" class="btn btn-success" id="importExcelBtn">
+                    <i class="bx bx-upload"></i> Import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {# Modal import users #}
 <div class="modal fade" id="importModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -347,6 +380,39 @@
     const IMPORT_URL = "{{ url_for('admin.contest_users_import', contest_id=contest.id) }}";
     const AVAIL_URL = "{{ url_for('admin.contest_api_available_users', contest_id=contest.id) }}";
     let userData = [], selectedUsers = new Set();
+
+    // Import Excel
+    $('#importExcelBtn').on('click', function () {
+        const file = document.getElementById('excelFile').files[0];
+        if (!file) { alert('Vui lòng chọn file.'); return; }
+        const formData = new FormData();
+        formData.append('file', file);
+        $(this).prop('disabled', true).text('Đang import...');
+        $('#importExcelResult').html('<p class="text-muted small">Đang xử lý...</p>');
+        fetch("{{ url_for('admin.contest_users_import_excel', contest_id=contest.id) }}", {
+            method: 'POST', body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            $('#importExcelBtn').prop('disabled', false).html('<i class="bx bx-upload"></i> Import');
+            if (data.success) {
+                $('#importExcelResult').html(
+                    `<div class="alert alert-success py-2">
+                        Thêm vào contest: <b>${data.added}</b> &nbsp;|&nbsp;
+                        Tạo user mới: <b>${data.created}</b> &nbsp;|&nbsp;
+                        Đã có: <b>${data.skipped}</b>
+                    </div>`
+                );
+                setTimeout(() => location.reload(), 1800);
+            } else {
+                $('#importExcelResult').html(`<div class="alert alert-danger py-2">${data.message}</div>`);
+            }
+        })
+        .catch(() => {
+            $('#importExcelBtn').prop('disabled', false).html('<i class="bx bx-upload"></i> Import');
+            $('#importExcelResult').html('<div class="alert alert-danger py-2">Lỗi kết nối.</div>');
+        });
+    });
 
     $('#importModal').on('show.bs.modal', function () {
         $('#userList').html('<p class="text-center text-muted">Đang tải...</p>');

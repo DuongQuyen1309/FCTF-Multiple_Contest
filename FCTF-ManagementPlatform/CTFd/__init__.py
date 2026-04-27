@@ -271,7 +271,15 @@ def create_app(config="CTFd.config.Config"):
             except Exception:
                 current_rev = None
             if current_rev is None:
-                upgrade()
+                # Check if tables already exist before running upgrade
+                from sqlalchemy import inspect as sa_inspect
+                inspector = sa_inspect(db.engine)
+                existing_tables = inspector.get_table_names()
+                if existing_tables:
+                    print(f"[CTFd] DB has existing tables but no revision, stamping latest.")
+                    stamp_latest_revision()
+                else:
+                    upgrade()
             else:
                 print(f"[CTFd] DB schema already at revision {current_rev}, skipping migrations.")
 
