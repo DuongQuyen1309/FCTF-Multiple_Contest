@@ -81,6 +81,12 @@ public class ChallengeService : IChallengeService
 
     public async Task<BaseResponseDTO<ChallengeByIdDTO>> GetById(int contestChallengeId, int teamId, User user, int contestId)
     {
+        // var contestChallengeIds = await _dbContext.ContestsChallenges
+        //     .AsNoTracking()
+        //     .Where(c => c.ContestId == contestId && c.State != "hidden")
+        //     .Select(c => c.Id)
+        //     .ToListAsync();
+
         var cc = await _dbContext.ContestsChallenges
             .AsNoTracking()
             .Include(c => c.BankChallenge!.Files)
@@ -96,11 +102,18 @@ public class ChallengeService : IChallengeService
 
         var requirementsObj = TryParseRequirements(bank.Requirements, contestChallengeId, teamId);
 
+        // Get all contest challenge IDs for this contest first
+        var contestChallengeIds = await _dbContext.ContestsChallenges
+            .AsNoTracking()
+            .Where(c => c.ContestId == contestId && c.State != "hidden")
+            .Select(c => c.Id)
+            .ToListAsync();
+
         // Prerequisites use bank IDs (requirements JSON references bank challenge IDs)
         var solvedBankIds = teamId > 0
             ? (await _dbContext.Solves
                 .AsNoTracking()
-                .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
                 .Select(s => s.ContestChallenge.BankId!.Value)
                 .ToListAsync()).ToHashSet()
             : new HashSet<int>();
@@ -241,8 +254,9 @@ public class ChallengeService : IChallengeService
             .Include(c => c.BankChallenge)
             .Where(c => c.ContestId == contestId
                 && c.State != "hidden"
-                && c.BankChallenge != null
-                && c.BankChallenge.Category == category_name)
+                // Match theo cc.Category (nếu có) hoặc BankChallenge.Category
+                && (c.Category == category_name
+                    || (c.Category == null && c.BankChallenge != null && c.BankChallenge.Category == category_name)))
             .Select(c => new
             {
                 c.Id,
@@ -254,21 +268,24 @@ public class ChallengeService : IChallengeService
                 c.ConnectionProtocol,
                 c.RequireDeploy,
                 c.BankId,
-                BankName = c.BankChallenge!.Name,
-                BankCategory = c.BankChallenge.Category,
-                BankType = c.BankChallenge.Type,
-                BankRequirements = c.BankChallenge.Requirements,
-                BankDifficulty = c.BankChallenge.Difficulty,
-                BankConnectionProtocol = c.BankChallenge.ConnectionProtocol,
+                BankName = c.BankChallenge != null ? c.BankChallenge.Name : null,
+                BankCategory = c.BankChallenge != null ? c.BankChallenge.Category : c.Category,
+                BankType = c.BankChallenge != null ? c.BankChallenge.Type : c.Type,
+                BankRequirements = c.BankChallenge != null ? c.BankChallenge.Requirements : c.Requirements,
+                BankDifficulty = c.BankChallenge != null ? c.BankChallenge.Difficulty : c.Difficulty,
+                BankConnectionProtocol = c.BankChallenge != null ? c.BankChallenge.ConnectionProtocol : c.ConnectionProtocol,
             })
             .ToListAsync();
 
         var difficultyVisible = _configHelper.GetConfig<string>("challenge_difficulty_visibility", "disabled") == "enabled";
 
+        // Get all contest challenge IDs for this contest
+        var contestChallengeIds = contestChallenges.Select(c => c.Id).ToList();
+
         var solvedBankIds = teamId > 0
             ? (await _dbContext.Solves
                 .AsNoTracking()
-                .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
                 .Select(s => s.ContestChallenge.BankId!.Value)
                 .ToListAsync()).ToHashSet()
             : new HashSet<int>();
@@ -276,7 +293,7 @@ public class ChallengeService : IChallengeService
         var solvedCcIds = teamId > 0
             ? (await _dbContext.Solves
                 .AsNoTracking()
-                .Where(s => s.ContestId == contestId && s.TeamId == teamId)
+                .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) && s.TeamId == teamId)
                 .Select(s => s.ContestChallengeId)
                 .ToListAsync()).ToHashSet()
             : new HashSet<int>();
@@ -337,21 +354,43 @@ public class ChallengeService : IChallengeService
 
     public async Task<List<TopicDTO>> GetTopic(int teamId, int contestId)
     {
-        var challengeStats = await _dbContext.ContestsChallenges
+        // Bước 1: Lấy danh sách contest_challenge_id từ contest_id
+        var contestChallengeIds = await _dbContext.ContestsChallenges
             .AsNoTracking()
-            .Where(c => c.ContestId == contestId && c.State != "hidden" && c.BankChallenge != null)
-            .GroupBy(c => c.BankChallenge!.Category)
-            .Select(g => new { Category = g.Key!, Total = g.Count() })
+            .Where(c => c.ContestId == contestId && c.State != "hidden")
+            .Select(c => c.Id)
             .ToListAsync();
 
+        // Bước 2: Dùng cc.Category trước (do C# portal set), fallback về BankChallenge.Category (do Python admin set)
+        var challengeStats = await _dbContext.ContestsChallenges
+            .AsNoTracking()
+            .Where(c => c.ContestId == contestId && c.State != "hidden")
+            .Select(c => new
+            {
+                EffectiveCategory = c.Category != null ? c.Category : (c.BankChallenge != null ? c.BankChallenge.Category : null)
+            })
+            .Where(x => x.EffectiveCategory != null)
+            .GroupBy(x => x.EffectiveCategory!)
+            .Select(g => new { Category = g.Key, Total = g.Count() })
+            .ToListAsync();
+
+        // Bước 3: Query solves chỉ với các contest_challenge_id hợp lệ
         var solvedStats = await _dbContext.Solves
             .AsNoTracking()
-            .Where(s => s.ContestId == contestId && s.TeamId == teamId
+            .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) 
+                && s.TeamId == teamId
                 && s.ContestChallenge != null
-                && s.ContestChallenge.State != "hidden"
-                && s.ContestChallenge.BankChallenge != null)
-            .GroupBy(s => s.ContestChallenge.BankChallenge!.Category)
-            .Select(g => new { Category = g.Key!, Solved = g.Select(x => x.ContestChallengeId).Distinct().Count() })
+                && s.ContestChallenge.State != "hidden")
+            .Select(s => new
+            {
+                s.ContestChallengeId,
+                EffectiveCategory = s.ContestChallenge.Category != null
+                    ? s.ContestChallenge.Category
+                    : (s.ContestChallenge.BankChallenge != null ? s.ContestChallenge.BankChallenge.Category : null)
+            })
+            .Where(x => x.EffectiveCategory != null)
+            .GroupBy(x => x.EffectiveCategory!)
+            .Select(g => new { Category = g.Key, Solved = g.Select(x => x.ContestChallengeId).Distinct().Count() })
             .ToListAsync();
 
         var solvedDict = solvedStats.ToDictionary(x => x.Category, x => x.Solved);
