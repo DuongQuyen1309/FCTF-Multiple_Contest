@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from flask import render_template, request, url_for, jsonify
 
 from CTFd.admin import admin
-from CTFd.models import Challenges, Submissions, Teams, Users, db
+from CTFd.models import Challenges, Submissions, Teams, Users, db, ContestsChallenges
 from CTFd.utils.decorators import admin_or_jury, admins_only
 from CTFd.utils.helpers.models import build_model_filters
 from CTFd.utils.modes import get_model
@@ -60,7 +60,7 @@ def submissions_listing(submission_type):
     if user_filter:
         filters.append(Submissions.user_id == int(user_filter))
     if challenge_filter:
-        filters.append(Submissions.challenge_id == int(challenge_filter))
+        filters.append(ContestsChallenges.bank_id == int(challenge_filter))
     if date_from:
         try:
             dt_from = datetime.strptime(date_from, "%Y-%m-%d")
@@ -80,7 +80,8 @@ def submissions_listing(submission_type):
     submissions = (
         Submissions.query.filter_by(**filters_by)
         .filter(*filters)
-        .join(Challenges)
+        .join(ContestsChallenges, Submissions.contest_challenge_id == ContestsChallenges.id)
+        .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
         .join(Model)
         .order_by(Submissions.date.desc())
         .paginate(page=page, per_page=50, error_out=False)

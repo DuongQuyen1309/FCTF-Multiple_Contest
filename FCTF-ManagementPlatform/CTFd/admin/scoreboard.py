@@ -13,7 +13,7 @@ from CTFd.utils.scores import (
     get_teams_cleared_all_challenges_by_topic,
     calculate_and_assign_awards,
 )
-from CTFd.models import Achievements, Awards, Brackets, Challenges, Solves, Teams, Users, db
+from CTFd.models import Achievements, Awards, Brackets, Challenges, ContestsChallenges, Solves, Teams, Users, db
 from sqlalchemy import and_
 
 
@@ -39,39 +39,40 @@ def scoreboard_listing():
     # Subquery for latest submissions
     latest_submission_subquery = (
         db.session.query(
-            Solves.challenge_id,
+            Solves.contest_challenge_id.label("challenge_id"),
             db.func.max(Solves.date).label("latest_submission_time")
         )
-        .group_by(Solves.challenge_id)
+        .group_by(Solves.contest_challenge_id)
         .subquery()
     )
 
     # Main query to join with the subquery and fetch additional details
     last_submission = (
         db.session.query(
-            Solves.challenge_id,
+            ContestsChallenges.id.label("challenge_id"),
             Solves.team_id,
             Solves.user_id,
             Solves.date.label("submission_time"),
-            Challenges.name.label("challenge_name"),
+            ContestsChallenges.name.label("challenge_name"),
             Teams.name.label("team_name"),
             Users.name.label("user_name")
         )
         .join(latest_submission_subquery, and_(
-            Solves.challenge_id == latest_submission_subquery.c.challenge_id,
+            Solves.contest_challenge_id == latest_submission_subquery.c.challenge_id,
             Solves.date == latest_submission_subquery.c.latest_submission_time
         ))
         .join(Teams, Solves.team_id == Teams.id)
         .join(Users, Solves.user_id == Users.id)
-        .join(Challenges, Solves.challenge_id == Challenges.id)
-        .order_by(Solves.challenge_id)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .order_by(Solves.contest_challenge_id)
         .all()
     )
 
     # Query for achievements
     first_bloods = (
         db.session.query(Achievements)
-        .join(Challenges, Achievements.challenge_id == Challenges.id)
+        .join(ContestsChallenges, Achievements.contest_challenge_id == ContestsChallenges.id)
+        .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
         .filter(Achievements.name == 'First Blood')
         .all()
     )

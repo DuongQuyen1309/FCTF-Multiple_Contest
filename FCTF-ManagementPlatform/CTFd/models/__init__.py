@@ -600,9 +600,6 @@ class Submissions(db.Model):
     __tablename__ = "submissions"
 
     id                   = db.Column(db.Integer, primary_key=True)
-    contest_id           = db.Column(
-        db.Integer, db.ForeignKey("contests.id", ondelete="CASCADE"), nullable=False
-    )
     # FK → ContestsChallenges (instance), không phải bank challenges
     contest_challenge_id = db.Column(
         db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"),
@@ -617,7 +614,6 @@ class Submissions(db.Model):
 
     user    = db.relationship("Users",  foreign_keys=[user_id],  lazy="select")
     team    = db.relationship("Teams",  foreign_keys=[team_id],  lazy="select")
-    contest = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
 
     __mapper_args__ = {"polymorphic_on": type}
 
@@ -663,10 +659,7 @@ class Solves(Submissions):
     id = db.Column(
         None, db.ForeignKey("submissions.id", ondelete="CASCADE"), primary_key=True
     )
-    contest_id = column_property(
-        db.Column(db.Integer, db.ForeignKey("contests.id", ondelete="CASCADE")),
-        Submissions.contest_id,
-    )
+
     contest_challenge_id = column_property(
         db.Column(db.Integer,
                   db.ForeignKey("contests_challenges.id", ondelete="CASCADE")),
@@ -781,18 +774,14 @@ class AwardBadges(db.Model):
     __tablename__ = "award_badges"
 
     id         = db.Column(db.Integer, primary_key=True)
-    contest_id = db.Column(
-        db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True
-    )
     user_id      = db.Column(db.Integer, db.ForeignKey("users.id",  ondelete="CASCADE"), nullable=True)
     team_id      = db.Column(db.Integer, db.ForeignKey("teams.id",  ondelete="CASCADE"), nullable=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
+    contest_challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
     name         = db.Column(db.String(80))
 
     user    = db.relationship("Users",  foreign_keys=[user_id],  lazy="select")
     team    = db.relationship("Teams",  foreign_keys=[team_id],  lazy="select")
-    contest = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
-    contest_challenge = db.relationship("ContestsChallenges", foreign_keys=[challenge_id], lazy="select")
+    contest_challenge = db.relationship("ContestsChallenges", foreign_keys=[contest_challenge_id], lazy="select")
 
     def __repr__(self):
         return f"<AwardBadge {self.name!r}>"
@@ -802,20 +791,16 @@ class Achievements(db.Model):
     __tablename__ = "achievements"
 
     id             = db.Column(db.Integer, primary_key=True)
-    contest_id     = db.Column(
-        db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True
-    )
     user_id        = db.Column(db.Integer, db.ForeignKey("users.id",  ondelete="CASCADE"), nullable=True)
     team_id        = db.Column(db.Integer, db.ForeignKey("teams.id",  ondelete="CASCADE"), nullable=True)
-    challenge_id   = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
+    contest_challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
     name           = db.Column(db.String(80))
     achievement_id = db.Column(db.Integer, db.ForeignKey("award_badges.id", ondelete="CASCADE"))
 
     award_badge       = db.relationship("AwardBadges",          foreign_keys=[achievement_id], lazy="select")
     user              = db.relationship("Users",                 foreign_keys=[user_id],        lazy="select")
     team              = db.relationship("Teams",                 foreign_keys=[team_id],        lazy="select")
-    contest           = db.relationship("Contests",              foreign_keys=[contest_id],     lazy="select")
-    contest_challenge = db.relationship("ContestsChallenges",    foreign_keys=[challenge_id],   lazy="select")
+    contest_challenge = db.relationship("ContestsChallenges",    foreign_keys=[contest_challenge_id],   lazy="select")
 
     def __repr__(self):
         return f"<Achievement {self.name!r}>"

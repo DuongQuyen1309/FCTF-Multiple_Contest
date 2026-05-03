@@ -6,7 +6,7 @@ from io import StringIO
 from flask import Response, render_template, request, stream_with_context, url_for
 
 from CTFd.admin import admin
-from CTFd.models import ChallengeStartTracking, Challenges, Teams, db
+from CTFd.models import ChallengeStartTracking, ContestsChallenges, Teams, db
 from CTFd.utils.decorators import admin_or_jury
 
 
@@ -76,11 +76,11 @@ def _apply_challenge_filter(query, challenge_filter):
     challenge_id = _parse_int(challenge_filter)
     if challenge_filter:
         if challenge_id is not None:
-            query = query.filter(Challenges.id == challenge_id)
+            query = query.filter(ContestsChallenges.id == challenge_id)
         else:
             escaped_filter = _escape_like_pattern(challenge_filter)
             search_pattern = f"%{escaped_filter}%"
-            query = query.filter(Challenges.name.ilike(search_pattern, escape="\\"))
+            query = query.filter(ContestsChallenges.name.ilike(search_pattern, escape="\\"))
     return query
 
 
@@ -98,11 +98,11 @@ def _base_instances_query():
             ChallengeStartTracking,
             Teams.id.label("team_id"),
             Teams.name.label("team_name"),
-            Challenges.id.label("challenge_id"),
-            Challenges.name.label("challenge_name"),
+            ContestsChallenges.id.label("challenge_id"),
+            ContestsChallenges.name.label("challenge_name"),
         )
         .outerjoin(Teams, ChallengeStartTracking.team_id == Teams.id)
-        .join(Challenges, ChallengeStartTracking.challenge_id == Challenges.id)
+        .join(ContestsChallenges, ChallengeStartTracking.contest_challenge_id == ContestsChallenges.id)
         .order_by(ChallengeStartTracking.started_at.desc())
     )
 
