@@ -184,6 +184,7 @@ jobs:
           IMAGE="${{ env.IMAGE_BASE }}/${{ matrix.image }}:${{ github.sha }}"
           echo "🚀 Deploying ${{ matrix.name }} → $IMAGE"
           kubectl -n $K8S_NAMESPACE set image deployment/${{ matrix.name }} ${{ matrix.name }}=$IMAGE
+          kubectl -n $K8S_NAMESPACE rollout restart deployment/${{ matrix.name }}
           kubectl -n $K8S_NAMESPACE rollout status deployment/${{ matrix.name }} --timeout=300s
           echo "✅ ${{ matrix.name }} deployed"
 
