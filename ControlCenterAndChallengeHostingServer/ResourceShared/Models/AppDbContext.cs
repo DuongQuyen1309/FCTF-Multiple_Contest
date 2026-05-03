@@ -320,6 +320,19 @@ public partial class AppDbContext : DbContext
             entity.Property(e => e.ImportCount).HasColumnType("int(11)").HasColumnName("import_count").HasDefaultValue(0);
             entity.Property(e => e.CreatedAt).HasMaxLength(6).HasColumnName("created_at");
             entity.Property(e => e.UpdatedAt).HasMaxLength(6).HasColumnName("updated_at");
+            
+            // Challenge configuration (defaults for when pulled to contest)
+            entity.Property(e => e.MaxAttempt).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("max_attempt");
+            entity.Property(e => e.Value).HasColumnType("int(11)").HasColumnName("value");
+            entity.Property(e => e.State).HasMaxLength(80).HasDefaultValueSql("'visible'").HasColumnName("state");
+            entity.Property(e => e.TimeLimit).HasColumnType("int(11)").HasColumnName("time_limit");
+            entity.Property(e => e.StartTime).HasMaxLength(6).HasColumnName("start_time");
+            entity.Property(e => e.TimeFinished).HasMaxLength(6).HasColumnName("time_finished");
+            entity.Property(e => e.Cooldown).HasColumnType("int(11)").HasDefaultValue(0).HasColumnName("cooldown");
+            entity.Property(e => e.RequireDeploy).HasColumnName("require_deploy").HasDefaultValue(false);
+            entity.Property(e => e.DeployStatus).HasColumnType("text").HasColumnName("deploy_status");
+            entity.Property(e => e.ConnectionProtocol).HasMaxLength(10).HasDefaultValueSql("'http'").HasColumnName("connection_protocol");
+            entity.Property(e => e.ConnectionInfo).HasColumnType("text").HasColumnName("connection_info");
 
             entity.HasOne(d => d.Author).WithMany(p => p.AuthoredChallenges)
                 .HasForeignKey(d => d.AuthorId)
@@ -746,15 +759,19 @@ public partial class AppDbContext : DbContext
             entity.HasIndex(e => e.UserId, "user_id");
 
             entity.Property(e => e.Id).ValueGeneratedNever().HasColumnType("int(11)").HasColumnName("id");
-            entity.Property(e => e.ContestId).HasColumnType("int(11)").HasColumnName("contest_id");
+            // ContestId is NOT in database - ignore it
+            entity.Ignore(e => e.ContestId);
+            // Contest navigation property is also not mapped
+            entity.Ignore(e => e.Contest);
             entity.Property(e => e.ContestChallengeId).HasColumnType("int(11)").HasColumnName("contest_challenge_id");
             entity.Property(e => e.TeamId).HasColumnType("int(11)").HasColumnName("team_id");
             entity.Property(e => e.UserId).HasColumnType("int(11)").HasColumnName("user_id");
 
-            entity.HasOne(d => d.Contest).WithMany(p => p.Solves)
-                .HasForeignKey(d => d.ContestId)
-                .OnDelete(DeleteBehavior.Cascade)
-                .HasConstraintName("solves_ibfk_contest");
+            // Remove Contest relationship since ContestId doesn't exist in database
+            // entity.HasOne(d => d.Contest).WithMany(p => p.Solves)
+            //     .HasForeignKey(d => d.ContestId)
+            //     .OnDelete(DeleteBehavior.Cascade)
+            //     .HasConstraintName("solves_ibfk_contest");
 
             entity.HasOne(d => d.ContestChallenge).WithMany(p => p.Solves)
                 .HasForeignKey(d => d.ContestChallengeId)

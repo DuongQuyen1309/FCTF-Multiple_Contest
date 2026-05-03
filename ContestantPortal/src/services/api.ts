@@ -1,6 +1,12 @@
 import { authService } from './authService';
 
-export const API_BASE_URL = window?.__ENV__?.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE_URL;
+export const getApiBaseUrl = (): string => {
+  return (window as any).__ENV__?.VITE_API_BASE_URL 
+    || (import.meta as any).env?.VITE_API_BASE_URL 
+    || 'http://localhost:5010';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 export async function fetchWithAuth(url: string, options: RequestInit = {}, API = API_BASE_URL) {
   const token = authService.getToken();
   

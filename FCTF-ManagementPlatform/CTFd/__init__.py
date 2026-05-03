@@ -400,9 +400,10 @@ def create_app(config="CTFd.config.Config"):
             # Always allow static assets
             if (
                 path.startswith("/themes/")
+                or path.startswith("/themes-beta/")
                 or path.startswith("/static/")
                 or path.startswith("/favicon")
-                    or path == "/healthcheck"
+                or path == "/healthcheck"
             ):
                 return
             # Allow access to uploaded files (logo, banners, etc.) so public users

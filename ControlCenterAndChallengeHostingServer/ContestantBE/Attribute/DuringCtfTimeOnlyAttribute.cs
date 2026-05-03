@@ -1,5 +1,8 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using ContestantBE.Services;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.EntityFrameworkCore;
+using ResourceShared.Models;
 using ResourceShared.Utils;
 using System.Security.Claims;
 
@@ -17,34 +20,71 @@ public class DuringCtfTimeOnlyFilter : IAsyncActionFilter
 {
     private readonly CtfTimeHelper _ctfTimeHelper;
     private readonly ConfigHelper _configHelper;
+    private readonly AppDbContext _dbContext;
+    private readonly ContestContext _contestContext;
 
     public DuringCtfTimeOnlyFilter(
         CtfTimeHelper ctfTimeHelper,
-        ConfigHelper configHelper)
+        ConfigHelper configHelper,
+        AppDbContext dbContext,
+        ContestContext contestContext)
     {
         _ctfTimeHelper = ctfTimeHelper;
         _configHelper = configHelper;
+        _dbContext = dbContext;
+        _contestContext = contestContext;
+    }
+
+    private async Task<(bool isActive, bool hasEnded, bool hasStarted)> ResolveContestTime()
+    {
+        var contestId = _contestContext.ContestId;
+        if (contestId > 0)
+        {
+            var contest = await _dbContext.Contests
+                .AsNoTracking()
+                .Where(c => c.Id == contestId)
+                .Select(c => new { c.StartTime, c.EndTime, c.State })
+                .FirstOrDefaultAsync();
+
+            if (contest != null)
+            {
+                // Nếu state là "ended", coi như đã kết thúc
+                if (contest.State == "ended")
+                    return (false, true, true);
+
+                var now = DateTime.UtcNow;
+                bool started = !contest.StartTime.HasValue || now >= contest.StartTime.Value;
+                bool ended = contest.EndTime.HasValue && now > contest.EndTime.Value;
+                bool active = started && !ended;
+                return (active, ended, started);
+            }
+        }
+
+        // Fallback: dùng global CTF config (cho trường hợp không có contest context)
+        return (_ctfTimeHelper.CtfTime(), _ctfTimeHelper.CtfEnded(), _ctfTimeHelper.CtfStarted());
     }
 
     public async Task OnActionExecutionAsync(
         ActionExecutingContext context,
         ActionExecutionDelegate next)
     {
-        if (_ctfTimeHelper.CtfTime())
+        var (isActive, hasEnded, hasStarted) = await ResolveContestTime();
+
+        if (isActive)
         {
             await next();
             return;
         }
 
-        if (_ctfTimeHelper.CtfEnded())
+        if (hasEnded)
         {
             context.Result = new JsonResult(new { error = $"{_configHelper.CtfName()} has ended" }) { StatusCode = 403 };
             return;
         }
 
-        if (!_ctfTimeHelper.CtfStarted())
+        if (!hasStarted)
         {
-            context.Result = new JsonResult(new { error = $"{_configHelper.GetConfig("ctf_name")} has not started yet" }) { StatusCode = 403 };
+            context.Result = new JsonResult(new { error = $"{_configHelper.CtfName()} has not started yet" }) { StatusCode = 403 };
             return;
         }
 
@@ -75,40 +115,76 @@ public class ViewOrDuringCtfTimeOnlyFilter : IAsyncActionFilter
 {
     private readonly CtfTimeHelper _ctfTimeHelper;
     private readonly ConfigHelper _configHelper;
+    private readonly AppDbContext _dbContext;
+    private readonly ContestContext _contestContext;
 
     public ViewOrDuringCtfTimeOnlyFilter(
         CtfTimeHelper ctfTimeHelper,
-        ConfigHelper configHelper)
+        ConfigHelper configHelper,
+        AppDbContext dbContext,
+        ContestContext contestContext)
     {
         _ctfTimeHelper = ctfTimeHelper;
         _configHelper = configHelper;
+        _dbContext = dbContext;
+        _contestContext = contestContext;
+    }
+
+    private async Task<(bool isActive, bool hasEnded, bool hasStarted)> ResolveContestTime()
+    {
+        var contestId = _contestContext.ContestId;
+        if (contestId > 0)
+        {
+            var contest = await _dbContext.Contests
+                .AsNoTracking()
+                .Where(c => c.Id == contestId)
+                .Select(c => new { c.StartTime, c.EndTime, c.State })
+                .FirstOrDefaultAsync();
+
+            if (contest != null)
+            {
+                if (contest.State == "ended")
+                    return (false, true, true);
+
+                var now = DateTime.UtcNow;
+                bool started = !contest.StartTime.HasValue || now >= contest.StartTime.Value;
+                bool ended = contest.EndTime.HasValue && now > contest.EndTime.Value;
+                bool active = started && !ended;
+                return (active, ended, started);
+            }
+        }
+
+        return (_ctfTimeHelper.CtfTime(), _ctfTimeHelper.CtfEnded(), _ctfTimeHelper.CtfStarted());
     }
 
     public async Task OnActionExecutionAsync(
         ActionExecutingContext context,
         ActionExecutionDelegate next)
     {
-        if (_ctfTimeHelper.CtfTime())
+        var (isActive, hasEnded, hasStarted) = await ResolveContestTime();
+
+        if (isActive)
         {
             await next();
             return;
         }
 
-        if (_ctfTimeHelper.CtfEnded() && _ctfTimeHelper.ViewAfterCtf())
+        // view_after_ctf: cho phép xem challenge sau khi contest kết thúc
+        if (hasEnded && _ctfTimeHelper.ViewAfterCtf())
         {
             await next();
             return;
         }
 
-        if (_ctfTimeHelper.CtfEnded())
+        if (hasEnded)
         {
             context.Result = new JsonResult(new { error = $"{_configHelper.CtfName()} has ended" }) { StatusCode = 403 };
             return;
         }
 
-        if (!_ctfTimeHelper.CtfStarted())
+        if (!hasStarted)
         {
-            context.Result = new JsonResult(new { error = $"{_configHelper.GetConfig("ctf_name")} has not started yet" }) { StatusCode = 403 };
+            context.Result = new JsonResult(new { error = $"{_configHelper.CtfName()} has not started yet" }) { StatusCode = 403 };
             return;
         }
 

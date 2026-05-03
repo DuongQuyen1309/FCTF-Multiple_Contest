@@ -3,7 +3,7 @@ from collections import defaultdict
 from flask_restx import Resource
 
 from CTFd.api.v1.statistics import statistics_namespace
-from CTFd.models import Challenges, db
+from CTFd.models import Challenges, ContestsChallenges, db
 from CTFd.utils.decorators import admin_or_challenge_writer_only_or_jury, admins_only
 from CTFd.utils.scores import get_standings
 
@@ -14,7 +14,7 @@ class ScoresDistribution(Resource):
     def get(self):
         challenge_count = Challenges.query.count() or 1
         total_points = (
-            Challenges.query.with_entities(db.func.sum(Challenges.value).label("sum"))
+            ContestsChallenges.query.with_entities(db.func.sum(ContestsChallenges.value).label("sum"))
             .filter_by(state="visible")
             .first()
             .sum

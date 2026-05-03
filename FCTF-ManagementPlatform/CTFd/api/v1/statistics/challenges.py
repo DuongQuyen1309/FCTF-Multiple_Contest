@@ -62,11 +62,12 @@ class ChallengeSolveStatistics(Resource):
 
         solves = (
             db.session.query(
-                solves_sub.columns.challenge_id,
+                solves_sub.columns.contest_challenge_id,
                 solves_sub.columns.solves,
                 Challenges.name,
             )
-            .join(Challenges, solves_sub.columns.challenge_id == Challenges.id)
+            .join(ContestsChallenges, solves_sub.columns.contest_challenge_id == ContestsChallenges.id)
+            .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
             .all()
         )
 
@@ -79,7 +80,7 @@ class ChallengeSolveStatistics(Resource):
             has_solves.append(challenge_id)
         for c in chals:
             if c.id not in has_solves:
-                challenge = {"id": c.id, "name": c.name, "solves": 0}
+                challenge = {"id": c.id, "name": (c.bank_challenge.name if c.bank_challenge else str(c.id)), "solves": 0}
                 response.append(challenge)
 
         db.session.close()
@@ -112,7 +113,8 @@ class ChallengeSolvePercentages(Resource):
         percentage_data = []
         for challenge in challenges:
             solve_count = (
-                Solves.query.join(Model, Solves.account_id == Model.id)
+                Solves.query.join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+                .join(Model, Solves.account_id == Model.id)
                 .filter(
                     Solves.contest_challenge_id == challenge.id,
                     Model.banned == False,

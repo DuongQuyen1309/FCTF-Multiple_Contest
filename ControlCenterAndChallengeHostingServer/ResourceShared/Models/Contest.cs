@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ResourceShared.Models;
 
@@ -51,6 +52,11 @@ public partial class Contest
 
     public virtual ICollection<Submission> Submissions { get; set; } = new List<Submission>();
 
+    /// <summary>
+    /// NOT MAPPED! Solves table doesn't have contest_id FK.
+    /// To get solves for a contest, query via ContestsChallenges.
+    /// </summary>
+    [NotMapped]
     public virtual ICollection<Solf> Solves { get; set; } = new List<Solf>();
 
     public virtual ICollection<Award> Awards { get; set; } = new List<Award>();

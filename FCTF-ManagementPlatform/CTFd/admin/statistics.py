@@ -51,8 +51,7 @@ def statistics():
         users_q = db.session.query(db.func.count(Users.id)).scalar_subquery()
         chals_q = db.session.query(db.func.count(Challenges.id)).scalar_subquery()
         points_q = (
-            db.session.query(db.func.sum(Challenges.value))
-            .filter(Challenges.state == "visible")
+            db.session.query(db.func.sum(ContestsChallenges.value))
             .scalar_subquery()
         )
         ips_q = db.session.query(db.func.count(db.func.distinct(Tracking.ip))).scalar_subquery()
@@ -81,6 +80,7 @@ def statistics():
         db.session.query(
             Solves.contest_challenge_id, db.func.count(Solves.contest_challenge_id).label("solves_cnt")
         )
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
         .join(Model, Solves.account_id == Model.id)
         .filter(Model.banned == False, Model.hidden == False)
     )
@@ -103,6 +103,12 @@ def statistics():
     solve_data = {name: count for _cid, count, name in solves}
     most_solved = max(solve_data, key=solve_data.get) if solve_data else None
     least_solved = min(solve_data, key=solve_data.get) if solve_data else None
+
+    # Semester và recent contests
+    from CTFd.models import Semester
+    semester_count = Semester.query.count()
+    recent_contests = Contests.query.order_by(Contests.created_at.desc()).limit(5).all()
+
     db.session.close()
 
     return render_template(

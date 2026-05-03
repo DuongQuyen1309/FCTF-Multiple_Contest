@@ -28,7 +28,7 @@ from CTFd.models import (
     db,
 )
 from CTFd.utils.crypto import hash_password
-from CTFd.utils.decorators import admins_or_teachers
+from CTFd.utils.decorators import admin_or_challenge_writer_only as admins_or_teachers
 from CTFd.utils.user import get_current_user, is_admin
 
 contests_namespace = Namespace("contests", description="Contest management endpoints")
