@@ -171,7 +171,7 @@ export function ContestList() {
       ) : (
         <Grid container spacing={3}>
           {contests.map((contest) => (
-            <Grid item xs={12} md={6} lg={4} key={contest.id}>
+            <Grid size={{ xs: 12, md: 6, lg: 4 }} key={contest.id}>
               <Card
                 sx={{
                   height: '100%',

@@ -9,7 +9,7 @@
  * 3. Truy cập: http://localhost:5173/debug-challenges
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Box, Typography, Button, Paper, Divider } from '@mui/material';
 import { authService } from '../services/authService';
 import { challengeService } from '../services/challengeService';

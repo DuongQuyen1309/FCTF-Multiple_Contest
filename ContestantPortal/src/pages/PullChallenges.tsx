@@ -293,7 +293,7 @@ export function PullChallenges() {
         <DialogContent>
           <Box sx={{ pt: 2 }}>
             <Grid container spacing={2}>
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <TextField
                   fullWidth
                   label="Challenge Name"
@@ -305,7 +305,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Points Value"
@@ -317,7 +317,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Max Attempts"
@@ -330,7 +330,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>State</InputLabel>
                   <Select
@@ -346,7 +346,7 @@ export function PullChallenges() {
                 </FormControl>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Time Limit (minutes)"
@@ -358,7 +358,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Cooldown (seconds)"
@@ -370,7 +370,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
                   fullWidth
                   label="Max Deploy Count"
@@ -383,7 +383,7 @@ export function PullChallenges() {
                 />
               </Grid>
 
-              <Grid item xs={12} sm={6}>
+              <Grid size={{ xs: 12, sm: 6 }}>
                 <FormControl fullWidth>
                   <InputLabel>Connection Protocol</InputLabel>
                   <Select
@@ -399,7 +399,7 @@ export function PullChallenges() {
                 </FormControl>
               </Grid>
 
-              <Grid item xs={12}>
+              <Grid size={12}>
                 <TextField
                   fullWidth
                   label="Connection Info"
