@@ -20,6 +20,8 @@ namespace ResourceShared.Utils
 
         public async Task<string> GenerateUserToken(
             User user,
+            int contestId,
+            int contestTeamId,
             DateTime? expiration = null,
             string? description = null)
         {
@@ -29,7 +31,8 @@ namespace ResourceShared.Utils
             AuthInfo authInfo = new()
             {
                 userId = user.Id,
-                teamId = user.TeamId ?? 0
+                teamId = contestTeamId,
+                contestId = contestId
             };
             var jwt = CreateToken(authInfo, tokenUuid, expireMinutes: 60 * 24 * 7); // 7 days
 
@@ -43,6 +46,10 @@ namespace ResourceShared.Utils
                 existingToken.Value = tokenUuid; // Chỉ lưu UUID
                 existingToken.Expiration = expiration;
                 existingToken.Description = description;
+                
+                // IMPORTANT: Save changes to database before returning
+                await _context.SaveChangesAsync();
+                
                 // Trả về token với JWT value (không phải UUID)
                 return jwt;
             }
@@ -58,6 +65,10 @@ namespace ResourceShared.Utils
                     Type = Enums.UserType.User
                 };
                 _context.Tokens.Add(token);
+                
+                // IMPORTANT: Save changes to database before returning
+                await _context.SaveChangesAsync();
+                
                 // Trả về token với JWT value
                 return jwt;
             }

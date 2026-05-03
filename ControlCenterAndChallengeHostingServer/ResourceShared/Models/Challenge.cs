@@ -9,7 +9,6 @@ namespace ResourceShared.Models;
 /// Khi đưa vào contest, một bản ContestsChallenge sẽ được tạo ra tham chiếu BankId = challenges.id.
 ///
 /// Table: challenges
-/// Các cột runtime (state, value, max_attempts, ...) đã chuyển sang bảng contests_challenges.
 /// </summary>
 public partial class Challenge
 {
@@ -27,10 +26,10 @@ public partial class Challenge
 
     public string? Requirements { get; set; }
 
-    // --- Tác giả (đổi từ user_id → author_id) ---
+    // --- Author (FK to users table) ---
     public int? AuthorId { get; set; }
 
-    // --- Deploy config (giữ nguyên trên bank) ---
+    // --- Deploy configuration ---
     public string? ImageLink { get; set; }
 
     public string? DeployFile { get; set; }
@@ -45,15 +44,13 @@ public partial class Challenge
 
     public bool? UseGvisor { get; set; }
 
-    public bool? HardenContainer { get; set; } = true;
+    public bool? HardenContainer { get; set; }
+
+    public bool? SharedInstant { get; set; } = false;
 
     public int? MaxDeployCount { get; set; } = 0;
 
-    public string ConnectionProtocol { get; set; } = "http";
-
-    public bool SharedInstant { get; set; } = false;
-
-    // --- Bank metadata (mới) ---
+    // --- Bank metadata ---
     public bool IsPublic { get; set; } = false;
 
     public int ImportCount { get; set; } = 0;
@@ -61,6 +58,29 @@ public partial class Challenge
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
+
+    // --- Challenge configuration (defaults for when pulled to contest) ---
+    public int? MaxAttempt { get; set; } = 0;
+
+    public int? Value { get; set; }
+
+    public string State { get; set; } = "visible";
+
+    public int? TimeLimit { get; set; }
+
+    public DateTime? StartTime { get; set; }
+
+    public DateTime? TimeFinished { get; set; }
+
+    public int? Cooldown { get; set; } = 0;
+
+    public bool RequireDeploy { get; set; } = false;
+
+    public string? DeployStatus { get; set; }
+
+    public string? ConnectionProtocol { get; set; } = "http";
+
+    public string? ConnectionInfo { get; set; }
 
     // Navigation properties
     public virtual User? Author { get; set; }

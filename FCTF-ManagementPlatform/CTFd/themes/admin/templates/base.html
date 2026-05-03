@@ -25,20 +25,6 @@
     {{ Assets.css("assets/css/fonts.scss", theme="admin") }}
     {{ Assets.css("assets/css/admin.scss", theme="admin") }}
     {{ Assets.css("assets/css/codemirror.scss", theme="admin") }}
-    <script type="text/javascript">
-        var init = {
-            'urlRoot': "{{ request.script_root }}",
-            'csrfNonce': "{{ Session.nonce }}",
-            'userMode': "{{ Configs.user_mode }}",
-            'userId': {{ Session.id }},
-        'userName': { { User.name | tojson } },
-        'userEmail': { { User.email | tojson } },
-        'teamId': { { Team.id | tojson } },
-        'teamName': { { Team.name | tojson } },
-        'start': { { Configs.start | tojson } },
-        'end': { { Configs.end | tojson } }
-        }
-    </script>
     {% block stylesheets %} {% endblock %}
     {% for stylesheet in get_registered_admin_stylesheets() %}
     {% if stylesheet.startswith('http') %}
@@ -49,6 +35,15 @@
     <link rel="stylesheet" type="text/css" href="{{ stylesheet }}">
     {% endif %}
     {% endfor %}
+    <script type="text/javascript">
+        var init = {
+            'urlRoot': "{{ request.script_root }}",
+            'csrfNonce': "{{ Session.nonce }}",
+            'theme': "admin",
+            'userMode': "{{ Configs.user_mode }}",
+            'userId': {{ Session.id }},
+        };
+    </script>
     <style>
         /* ══════════════════════════════════════════════════════════════════
            Clean Admin Theme — Shared Global Styles (compact & consistent)
@@ -1053,15 +1048,12 @@
         <div class="d-flex flex-column w-100">
             <ul class="list-unstyled components">
 
-                {# ══════════════════════════════════════════════════════════
-                GLOBAL NAV — shown when NOT in a contest context
-                ══════════════════════════════════════════════════════════ #}
-                {% set _contest = current_contest if current_contest is defined else (contest if contest is defined else
-                none) %}
-
                 {% if not _contest %}
-
-                {% if is_admin() %}
+                <li class="nav-item mb-2">
+                    <a class="nav-link" href="{{ url_for('admin.semesters_listing') }}" style="background-color: var(--primary-orange); color: white;">
+                        <i class="bx bx-arrow-back"></i> Back to Global Admin
+                    </a>
+                </li>
                 <li class="nav-item">
                     <a class="nav-link" href="{{ url_for('admin.statistics') }}">
                         <i class="bx bx-bar-chart-alt-2"></i> Dashboard
@@ -1086,8 +1078,6 @@
                     </a>
                 </li>
                 {% endif %}
-
-                {% endif %}{# end global nav #}
 
                 {# ══════════════════════════════════════════════════════════
                 CONTEST NAV — shown when inside a contest context
@@ -1285,7 +1275,6 @@
                 }
             }
 
-            {% if not is_detail %}
             //inserting title underlines
             $('.jumbotron').find('.container').append(`<svg width="184" height="5" viewBox="0 0 184 5" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="100" width="43" height="5" fill="#E45C25"/>
@@ -1295,7 +1284,6 @@
                 <rect x="182" width="2" height="5" fill="#E45C25"/>
                 <rect opacity="0.5" width="127" height="5" fill="#E45C25"/>
             </svg>`);
-            {% endif %}
 
             $('.jumbotron').append(`<svg width="100%" height="15" viewBox="0 0 1089 15" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path opacity="0.3" d="M-7 1H171.287L187.332 14H938.513L954.559 1H1096" stroke="#E45C25" stroke-width="2"/>

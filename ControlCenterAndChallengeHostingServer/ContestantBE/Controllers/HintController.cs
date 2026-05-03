@@ -75,7 +75,6 @@ public class HintController : BaseController
         }
         try
         {
-
             var target = await _context.Hints.Include(h => h.Challenge).FirstOrDefaultAsync(h => h.Id == req.Target);
 
             if (target == null || target.Challenge == null)
@@ -85,19 +84,23 @@ public class HintController : BaseController
 
             _userBehaviorLogger.Log("UNLOCK_HINT", userId, teamId, new { hint_id = req.Target, challenge_id = target.Challenge.Id });
 
-            if (target.Challenge.State == ChallengeState.HIDDEN)
+            // Check if challenge is visible in current contest
+            var contestChallenge = await _context.ContestsChallenges
+                .FirstOrDefaultAsync(cc => cc.BankId == target.Challenge.Id && cc.ContestId == UserContext.ContestId);
+
+            if (contestChallenge == null || contestChallenge.State == ChallengeState.HIDDEN)
             {
                 return BadRequest(new { success = false, error = "Challenge is hidden" });
             }
 
-            var solve = await _context.Solves.FirstOrDefaultAsync(s => s.ChallengeId == target.Challenge.Id && s.TeamId == teamId);
+            var solve = await _context.Solves.FirstOrDefaultAsync(s => s.ContestChallengeId == contestChallenge.Id && s.TeamId == teamId);
 
             if (solve != null)
             {
                 return BadRequest(new { success = false, error = "Challenge already solved" });
             }
 
-            await Console.Out.WriteLineAsync($"[Requesst Unlock Hint Challenge] User {userId} : Team {teamId} : Challenge {target.Challenge.Name}");
+            await Console.Out.WriteLineAsync($"[Request Unlock Hint Challenge] User {userId} : Team {teamId} : Challenge {target.Challenge.Name}");
 
             var result = await _hintService.UnlockHint(req, userId);
             if (result == null)

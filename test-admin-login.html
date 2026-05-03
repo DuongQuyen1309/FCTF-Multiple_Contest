@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Admin Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-align: center;
+        }
+
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .result.success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .result.error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .result h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .result pre {
+            background: rgba(0, 0, 0, 0.05);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+
+        .info-box h4 {
+            color: #1976D2;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            color: #555;
+            font-size: 13px;
+        }
+
+        .info-box li {
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .api-url {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            color: #666;
+            word-break: break-all;
+        }
+
+        .api-url strong {
+            color: #333;
+        }
+
+        .quick-test {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .quick-test button {
+            padding: 10px;
+            background: #f0f0f0;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .quick-test button:hover {
+            background: #e0e0e0;
+            border-color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Test Admin Login</h1>
+        <p class="subtitle">Test đăng nhập với tài khoản admin</p>
+
+        <div class="info-box">
+            <h4>📋 Yêu cầu trước khi test:</h4>
+            <ul>
+                <li>Backend đang chạy ở <strong>localhost:5000</strong></li>
+                <li>Có tài khoản với <strong>type = "admin"</strong> trong database</li>
+                <li>Mở DevTools (F12) để xem console logs</li>
+            </ul>
+        </div>
+
+        <div class="api-url">
+            <strong>API Endpoint:</strong> <span id="apiUrl">http://localhost:5000/api/auth/login</span>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username (Admin)</label>
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    placeholder="Nhập username admin (vd: admin)"
+                    required
+                    autocomplete="username"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Nhập password"
+                    required
+                    autocomplete="current-password"
+                >
+            </div>
+
+            <button type="submit" class="btn" id="loginBtn">
+                Login as Admin
+            </button>
+        </form>
+
+        <div class="quick-test">
+            <button onclick="testBackendHealth()">Test Backend Health</button>
+            <button onclick="checkLocalStorage()">Check LocalStorage</button>
+            <button onclick="clearLocalStorage()">Clear LocalStorage</button>
+            <button onclick="openFrontend()">Open Frontend</button>
+        </div>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:5069';
+        const FRONTEND_URL = 'http://localhost:5173';
+
+        // Update API URL display
+        document.getElementById('apiUrl').textContent = `${API_BASE_URL}/api/auth/login-contestant`;
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const loginBtn = document.getElementById('loginBtn');
+            const resultDiv = document.getElementById('result');
+
+            // Disable button and show loading
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="loading"></span>Đang đăng nhập...';
+            resultDiv.style.display = 'none';
+
+            console.log('='.repeat(60));
+            console.log('🚀 STARTING ADMIN LOGIN TEST');
+            console.log('='.repeat(60));
+            console.log('📝 Credentials:', { username, password: '***' });
+            console.log('🌐 API URL:', `${API_BASE_URL}/api/auth/login-contestant`);
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/auth/login-contestant`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                console.log('📡 Response Status:', response.status, response.statusText);
+
+                const data = await response.json();
+                console.log('📦 Response Data:', data);
+
+                if (response.ok) {
+                    // Check if user is admin
+                    const isAdmin = data.user?.type === 'admin';
+                    console.log('👤 User Type:', data.user?.type);
+                    console.log('✅ Is Admin?', isAdmin);
+
+                    if (isAdmin) {
+                        // Save to localStorage
+                        localStorage.setItem('auth_token', data.generatedToken);
+                        localStorage.setItem('user_info', JSON.stringify(data.user));
+                        console.log('💾 Saved to localStorage');
+
+                        showResult('success', 'Login Admin Thành Công! ✅', data);
+                        
+                        console.log('='.repeat(60));
+                        console.log('✅ LOGIN SUCCESSFUL - ADMIN ACCESS GRANTED');
+                        console.log('='.repeat(60));
+                        console.log('🎫 Token:', data.generatedToken.substring(0, 50) + '...');
+                        console.log('👤 User:', data.user);
+                        console.log('='.repeat(60));
+                    } else {
+                        showResult('error', 'Tài khoản không phải Admin! ❌', {
+                            message: `User type là "${data.user?.type}" thay vì "admin"`,
+                            user: data.user
+                        });
+                        console.warn('⚠️ User is not admin:', data.user?.type);
+                    }
+                } else {
+                    showResult('error', 'Login Thất Bại! ❌', data);
+                    console.error('❌ Login failed:', data);
+                }
+            } catch (error) {
+                console.error('💥 ERROR:', error);
+                showResult('error', 'Lỗi Kết Nối! ❌', {
+                    message: error.message,
+                    hint: 'Kiểm tra xem backend có đang chạy không?'
+                });
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = 'Login as Admin';
+            }
+        });
+
+        function showResult(type, title, data) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.className = `result ${type}`;
+            resultDiv.innerHTML = `
+                <h3>${title}</h3>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            `;
+            resultDiv.style.display = 'block';
+        }
+
+        async function testBackendHealth() {
+            console.log('🏥 Testing backend health...');
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/health`);
+                const data = await response.json();
+                console.log('✅ Backend is healthy:', data);
+                alert('✅ Backend đang chạy tốt!\n\n' + JSON.stringify(data, null, 2));
+            } catch (error) {
+                console.error('❌ Backend health check failed:', error);
+                alert('❌ Không thể kết nối đến backend!\n\nKiểm tra xem backend có đang chạy ở port 5000 không?');
+            }
+        }
+
+        function checkLocalStorage() {
+            const token = localStorage.getItem('auth_token');
+            const userInfo = localStorage.getItem('user_info');
+            
+            console.log('🔍 LocalStorage Check:');
+            console.log('Token:', token ? token.substring(0, 50) + '...' : 'NOT FOUND');
+            console.log('User Info:', userInfo ? JSON.parse(userInfo) : 'NOT FOUND');
+
+            if (token && userInfo) {
+                const user = JSON.parse(userInfo);
+                alert(`✅ Đã có session!\n\nUsername: ${user.username}\nType: ${user.type}\nToken: ${token.substring(0, 30)}...`);
+            } else {
+                alert('❌ Chưa có session trong localStorage');
+            }
+        }
+
+        function clearLocalStorage() {
+            localStorage.clear();
+            console.log('🗑️ LocalStorage cleared');
+            alert('✅ Đã xóa tất cả dữ liệu trong localStorage');
+        }
+
+        function openFrontend() {
+            window.open(FRONTEND_URL, '_blank');
+        }
+
+        // Auto-fill for quick testing (remove in production)
+        window.addEventListener('load', () => {
+            console.log('💡 TIP: Nhập username và password của admin để test');
+            console.log('💡 Mở DevTools (F12) để xem chi tiết logs');
+        });
+    </script>
+</body>
+</html>

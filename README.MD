@@ -1,165 +1,341 @@
-# FCTF Platform
+# 🎯 FCTF Multiple Contest System
 
-FCTF is a microservices-based CTF platform designed to run large-scale competitions with dynamic challenge deployment, isolated runtime environments, and full lifecycle management on container/Kubernetes infrastructure.
+## ✅ Status: Implementation Complete - Ready for Testing
 
-The system helps organizers operate competitions reliably at scale while providing contestants with a smooth experience across registration, challenge solving, flag submission, and scoreboard tracking.
+This repository contains the **FCTF Multiple Contest System** - a CTF platform that supports multiple independent contests with isolated data and access control.
 
-## Features
+---
 
-- Dynamic challenge deployment per session for stronger isolation and security.
-- Central gateway for request routing, rate limiting, and access control.
-- Modern contestant portal optimized for fast and intuitive competition workflows.
-- Control Center for challenge, user, and system status administration.
-- Deployment listener/consumer components for automated service lifecycle operations.
-- Data migration and synchronization support from legacy CTF platforms.
-- Gateway test suite (quick/all/race/load) for functional and performance validation.
-- Docker and K3s manifest-based infrastructure for easier staging/production deployment.
-
-## Quick Start
-
-Recommended installation flow:
-
-1. Run **Configure service domains/IP** on the master node.
-2. Run **Setup master** on the master node.
-3. Run **Setup worker** on each worker node to join the cluster (requires master URL and master token).
-4. Return to the master node and run **Install FCTF**.
-5. Run **Setup Harbor** on the master node.
-
-### Prerequisites
-
-- Ubuntu on all nodes (master and workers)
-- `sudo` privileges
-- Repository available on each node
+## 🚀 Quick Start (5 Minutes)
 
 ```bash
-git clone <repo-url> FCTF
-cd FCTF
-chmod +x manage.sh
+# 1. Make scripts executable (first time only)
+chmod +x *.sh
+
+# 2. Generate password hash
+cd ControlCenterAndChallengeHostingServer/GeneratePasswordHash
+dotnet run password123
+# Copy the hash, then go back to root
+cd ../..
+
+# 3. Update test-data.sql
+# Replace all REPLACE_WITH_HASH with the hash from step 2
+
+# 4. Run automated setup
+./test-with-docker.sh
+
+# 5. Start backend (new terminal)
+cd ControlCenterAndChallengeHostingServer/ContestantBE
+dotnet run
+
+# 6. Start frontend (new terminal)
+cd ContestantPortal
+npm run dev
+
+# 7. Test in browser
+# Open http://localhost:5173
+# Login: student1 / password123
 ```
 
-### Step 1: Configure service domains/IP (run first)
+---
 
-On the master node:
+## 📚 Documentation
 
+### **Start Here:**
+- 📖 **[START_HERE.md](START_HERE.md)** ⭐ - **Read this first!**
+- 🇻🇳 **[TOM_TAT_TIENG_VIET.md](TOM_TAT_TIENG_VIET.md)** - Vietnamese summary
+- 📜 **[SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md)** ⭐ - How to use scripts
+
+### **Understanding:**
+- 📊 [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - What was implemented
+- 🏗️ [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) - System architecture
+- 🔄 [MULTIPLE_CONTEST_FLOW.md](MULTIPLE_CONTEST_FLOW.md) - Detailed flow
+
+### **Testing:**
+- 🐳 [DOCKER_TESTING_GUIDE.md](DOCKER_TESTING_GUIDE.md) - Docker-based testing
+- ⚡ [QUICK_START.md](QUICK_START.md) - Quick start guide
+- 📋 [LOCAL_TESTING_GUIDE.md](LOCAL_TESTING_GUIDE.md) - Detailed guide
+- ✅ [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md) - 38 test cases
+- 📝 [TESTING_PROGRESS.md](TESTING_PROGRESS.md) - Track progress
+
+### **Reference:**
+- 📑 [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) - Complete index
+- 📁 [FILES_CREATED.md](FILES_CREATED.md) - List of all files
+- 📚 [README_TESTING.md](README_TESTING.md) - Testing overview
+
+---
+
+## 🔧 Available Scripts
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `setup-database.sh` | Setup database | `./setup-database.sh` |
+| `import-test-data.sh` | Import test data | `./import-test-data.sh` |
+| `test-with-docker.sh` | Complete automation | `./test-with-docker.sh` |
+| `test-api.sh` | Test APIs | `./test-api.sh` |
+
+**See [SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md) for detailed usage.**
+
+---
+
+## 🧪 Test Accounts
+
+| Username | Password | Role | Access |
+|----------|----------|------|--------|
+| admin | password123 | Admin | All contests |
+| teacher1 | password123 | Teacher | Own + participated |
+| student1 | password123 | Student | Contest 1, 2 |
+| student2 | password123 | Student | Contest 1 |
+
+---
+
+## 🎯 Key Features
+
+### **Multiple Contest Support:**
+- ✅ Users can participate in multiple contests
+- ✅ Each contest has isolated data
+- ✅ Independent scoreboards per contest
+- ✅ Contest-specific challenges
+
+### **New Authentication Flow:**
+```
+Login (no contestId) → Select Contest → Access Resources
+```
+
+### **Role-Based Access:**
+- **Admin:** Manage all contests
+- **Teacher:** Create and manage own contests
+- **Student:** Participate in assigned contests
+
+### **Data Isolation:**
+- JWT tokens include contestId
+- Redis keys prefixed: `contest:{contestId}:`
+- Database queries scoped by contestId
+- Token from Contest A cannot access Contest B
+
+---
+
+## 🏗️ Architecture
+
+```
+Frontend (React/TypeScript)
+    ↓
+Backend (.NET/C#)
+    ↓
+┌─────────┬─────────┬──────────┐
+│ MariaDB │  Redis  │ RabbitMQ │
+└─────────┴─────────┴──────────┘
+```
+
+**See [ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md) for detailed diagrams.**
+
+---
+
+## 📊 What Can Be Tested
+
+✅ Login without contestId  
+✅ Contest selection  
+✅ Contest management (create, list, view)  
+✅ Challenge management (pull, configure)  
+✅ Participant import  
+✅ Flag submission (non-deploy)  
+✅ Scoreboard  
+✅ Access control  
+✅ Data isolation  
+
+❌ Cannot test locally: K8s features (challenge deployment, pods)
+
+---
+
+## 🐳 Docker Services
+
+| Service | Port | Credentials |
+|---------|------|-------------|
+| MariaDB | 3306 | fctf_user / fctf_password |
+| Redis | 6379 | redis_password |
+| RabbitMQ | 5672, 15672 | admin / rabbitmq_password |
+
+**Management UI:** http://localhost:15672
+
+---
+
+## 🔍 Verification
+
+### **Check Services:**
 ```bash
-./manage.sh
+docker compose -f docker-compose.dev.yml ps
 ```
 
-Select:
-
-- `9) Configure service domains/IP`
-
-### Step 2: Set up the master node
-
+### **Check Database:**
 ```bash
-./manage.sh
+docker exec -it fctf-mariadb mysql -u fctf_user -pfctf_password fctf_multiple_contest -e "SELECT COUNT(*) FROM users;"
 ```
 
-Select:
-
-- `1) Setup master`
-
-This installs K3s server and prints the worker join token at the end.
-
-### Step 3: Set up worker nodes and join the cluster
-
-On each worker node:
-
+### **Check Redis:**
 ```bash
-cd FCTF
-./manage.sh
+docker exec -it fctf-redis redis-cli -a redis_password KEYS '*'
 ```
 
-Select:
-
-- `2) Setup worker`
-
-When prompted, provide:
-
-- Master URL (example: `https://10.x.x.x:6443`)
-- Master token (from Step 1 output)
-
-Repeat for all worker nodes.
-
-### Step 4: Install FCTF platform components
-
-Back on the master node:
-
+### **Check Backend:**
 ```bash
-cd FCTF
-./manage.sh
+curl http://localhost:5000/healthcheck
 ```
 
-Select:
-
-- `3) Install FCTF`
-
-### Step 5: Set up Harbor
-
-On the master node:
-
+### **Test APIs:**
 ```bash
-cd FCTF
-./manage.sh
+./test-api.sh
 ```
 
-Select:
+---
 
-- `4) Setup harbor`
+## 🐛 Troubleshooting
 
-### Optional operations
-
-`manage.sh` also provides:
-
-- `5) Setup CI/CD`
-- `6) Get Argo token`
-
-### Environment-specific configuration checklist (Important)
-
-Before running production deployment, review and update the following values based on your target environment:
-
-- **NFS server IP in PV manifests**  
-	Update the NFS server address in PersistentVolume files under the K3s manifests (NFS-backed storage).
-
-- **Nginx domain**  
-	Update ingress/nginx hostnames and related domain references to match your actual public domain.
-
-- **Rancher domain in `rancher-values.yaml`**  
-	Ensure Rancher hostname/domain values are set correctly for your environment.
-
-- **ConfigMaps and Secrets**  
-	Review all application configuration and secret values (URLs, keys, credentials, feature flags, etc.).
-
-- **Helm credentials (accounts/passwords)**  
-	Replace default or placeholder usernames/passwords in Helm values files (database, RabbitMQ, Redis, Harbor, and other components).
-
-> All items above must be adjusted per environment (dev/staging/prod) before installation.
-
-## Uninstall
-
-Use the management menu:
-
+### **Scripts not executable:**
 ```bash
-./manage.sh
+chmod +x *.sh
 ```
 
-Select:
+### **Password hash not updated:**
+```bash
+cd ControlCenterAndChallengeHostingServer/GeneratePasswordHash
+dotnet run password123
+# Update test-data.sql with the hash
+```
 
-- `7) Uninstall`
+### **Backend won't start:**
+```bash
+# Check MySQL
+docker ps | grep mariadb
 
-Then choose one of the following:
+# Check connection
+mysql -u fctf_user -pfctf_password -h localhost fctf_multiple_contest -e "SHOW TABLES;"
+```
 
-- `1) Uninstall worker`: remove a worker node
-- `2) Uninstall master`: remove the master node and related resources
+### **Frontend can't connect:**
+```bash
+# Check backend
+curl http://localhost:5000/healthcheck
 
-Recommended order:
+# Check .env.local
+cat ContestantPortal/.env.local
+```
 
-1. Uninstall all worker nodes first.
-2. Uninstall the master node last.
+**See troubleshooting sections in documentation for more details.**
 
-## For more information
+---
 
-https://hoaanhtuc113.github.io/FCTF
+## 📁 Project Structure
 
+```
+.
+├── Documentation/          # All documentation files
+│   ├── START_HERE.md      # Entry point ⭐
+│   ├── SCRIPTS_GUIDE.md   # Scripts usage ⭐
+│   └── ...
+│
+├── Scripts/               # Setup and test scripts
+│   ├── setup-database.sh
+│   ├── import-test-data.sh
+│   ├── test-with-docker.sh
+│   └── test-api.sh
+│
+├── Data/
+│   └── test-data.sql      # Test data
+│
+├── ControlCenterAndChallengeHostingServer/
+│   └── ContestantBE/      # Backend (.NET)
+│
+├── ContestantPortal/      # Frontend (React)
+│
+└── docker-compose.dev.yml # Docker services
+```
 
+---
+
+## 🎯 Next Steps
+
+1. ✅ Read [START_HERE.md](START_HERE.md)
+2. ✅ Read [SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md)
+3. ✅ Follow Quick Start above
+4. ✅ Run `./test-api.sh`
+5. ✅ Test in browser
+6. ✅ Follow [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)
+7. ⏭️ Deploy to staging
+
+---
+
+## 📞 Support
+
+- **Quick start:** [START_HERE.md](START_HERE.md)
+- **Scripts help:** [SCRIPTS_GUIDE.md](SCRIPTS_GUIDE.md)
+- **Vietnamese:** [TOM_TAT_TIENG_VIET.md](TOM_TAT_TIENG_VIET.md)
+- **Docker setup:** [DOCKER_TESTING_GUIDE.md](DOCKER_TESTING_GUIDE.md)
+- **Testing:** [TESTING_CHECKLIST.md](TESTING_CHECKLIST.md)
+
+---
+
+## 📊 Statistics
+
+- **Total Documentation:** 14 files (~180 KB)
+- **Scripts:** 4 files
+- **Test Cases:** 38
+- **Test Accounts:** 7
+- **Test Contests:** 3
+- **Test Challenges:** 10
+
+---
+
+## ✅ Implementation Status
+
+- ✅ Backend APIs implemented
+- ✅ Frontend pages implemented
+- ✅ Authentication flow updated
+- ✅ Access control implemented
+- ✅ Data isolation implemented
+- ✅ Testing documentation complete
+- ✅ Test data ready
+- ✅ Scripts ready
+
+**Status: Ready for Testing! 🚀**
+
+---
+
+## 🏆 Key Changes
+
+### **Authentication:**
+- Login no longer requires contestId
+- New contest selection step
+- JWT token updated after selection
+
+### **Contest Management:**
+- Create multiple contests
+- Pull challenges from bank
+- Import participants via email
+- Configure challenge properties
+
+### **Data Isolation:**
+- JWT includes contestId
+- Redis keys prefixed
+- Database queries scoped
+- Token validation enforced
+
+---
+
+## 📝 License
+
+[Your License Here]
+
+---
+
+## 👥 Contributors
+
+[Your Team Here]
+
+---
+
+**Ready to start testing? Read [START_HERE.md](START_HERE.md)! 🚀**
+
+*Last Updated: 2024*
+*Version: 1.0*
+*Status: Complete ✅*
 

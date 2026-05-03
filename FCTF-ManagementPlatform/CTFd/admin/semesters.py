@@ -86,7 +86,6 @@ def semester_detail(semester_id):
         .order_by(Contest.created_at.desc())
         .all()
     )
-    # Gắn thêm số lượng participants cho mỗi contest
     for c in contests:
         c.participant_count = ContestParticipant.query.filter_by(contest_id=c.id).count()
     return render_template(
@@ -122,8 +121,6 @@ def semester_edit(semester_id):
                 return fallback
 
         old_name = sem.semester_name
-
-        # Cập nhật contests trước khi đổi tên semester (tránh FK constraint)
         if new_name != old_name:
             Contest.query.filter_by(semester_name=old_name).update(
                 {"semester_name": new_name}, synchronize_session=False
@@ -885,194 +882,80 @@ def contest_team_new(contest_id):
     )
 
 
-@admin.route("/admin/contests/<int:contest_id>/teams/<int:team_id>/remove", methods=["POST"])
+@admin.route("/admin/import_contest_participants", methods=["POST"])
 @admins_only
-def contest_team_remove(contest_id, team_id):
-    from CTFd.models import Teams as TeamsModel
-    team = TeamsModel.query.filter_by(id=team_id, contest_id=contest_id).first_or_404()
-    team.contest_id = None
-    db.session.commit()
-    flash("Đã xoá team khỏi contest.", "success")
-    return redirect(url_for("admin.contest_teams", contest_id=contest_id))
+def import_contest_participants():
+    from io import StringIO
+    import csv
+    from CTFd.models import Users, ContestParticipants as ContestParticipant
+    from CTFd.utils.crypto import hash_password
 
+    contest_id = request.form.get("contest_id", type=int)
+    if not contest_id:
+        flash("Invalid contest ID.", "danger")
+        return redirect(url_for("admin.semesters_listing"))
 
+    if "csv_file" not in request.files:
+        flash("No file provided.", "danger")
+        return redirect(url_for("admin.semesters_listing"))
 
-@admin.route("/admin/contests/<int:contest_id>/action-logs")
-@admins_only
-def contest_action_logs(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    from CTFd.models import ActionLogs
-    from CTFd.admin.action_logs import (
-        ACTION_TYPE_LABELS, _base_action_logs_query,
-        _apply_user_team_filters, _apply_action_type_filter
-    )
-    page = abs(request.args.get("page", 1, type=int))
-    per_page = max(1, min(request.args.get("per_page", 50, type=int), 200))
-    user_filter = (request.args.get("user") or "").strip()
-    team_filter = (request.args.get("team") or "").strip()
-    action_type_filter = (request.args.get("action_type") or "").strip()
+    file = request.files["csv_file"]
+    if file.filename == "":
+        flash("No file selected.", "danger")
+        return redirect(url_for("admin.semesters_listing"))
 
-    participant_ids = [cp.user_id for cp in ContestParticipant.query.filter_by(contest_id=contest_id).all()]
-    query = _base_action_logs_query()
-    if participant_ids:
-        query = query.filter(ActionLogs.userId.in_(participant_ids))
-    else:
-        query = query.filter(db.false())
-    query = _apply_user_team_filters(query, user_filter=user_filter, team_filter=team_filter)
-    query = _apply_action_type_filter(query, action_type_filter=action_type_filter)
-    logs = query.paginate(page=page, per_page=per_page, error_out=False)
+    try:
+        raw = file.stream.read()
+        try:
+            csvdata = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csvdata = raw.decode("latin-1")
 
-    args = dict(request.args)
-    args.pop("page", None)
-    prev_page = url_for("admin.contest_action_logs", contest_id=contest_id, page=logs.prev_num, **args) if logs.has_prev else "#"
-    next_page = url_for("admin.contest_action_logs", contest_id=contest_id, page=logs.next_num, **args) if logs.has_next else "#"
+        csvfile = StringIO(csvdata)
+        reader = csv.DictReader(csvfile)
 
-    return render_template(
-        "admin/contests/action_logs.html",
-        contest=contest, logs=logs,
-        prev_page=prev_page, next_page=next_page,
-        user_filter=user_filter, team_filter=team_filter,
-        action_type_filter=action_type_filter,
-        per_page=per_page, action_type_labels=ACTION_TYPE_LABELS,
-    )
+        def normalize_row(row):
+            return {k.strip().lower() if isinstance(k, str) else k: v for k, v in row.items()}
 
+        added_users = 0
+        added_participants = 0
 
-@admin.route("/admin/contests/<int:contest_id>/instances")
-@admins_only
-def contest_instances(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    from CTFd.admin.instances_history import (
-        _base_instances_query, _apply_team_filter,
-        _apply_challenge_filter, _apply_date_filters,
-        _parse_datetime, _parse_quick_range, _local_to_utc,
-    )
-    from CTFd.models import ChallengeStartTracking
-    from datetime import datetime as dt_datetime
+        for row in reader:
+            row = normalize_row(row)
+            email = row.get("email")
+            if not email:
+                continue
+            email = email.strip().lower()
+            user = Users.query.filter_by(email=email).first()
+            if not user:
+                name = row.get("name", email.split("@")[0])
+                password = row.get("password", "fpt123456")
+                user = Users(
+                    name=name,
+                    email=email,
+                    password=hash_password(password),
+                    type="user",
+                    hidden=False,
+                )
+                db.session.add(user)
+                db.session.commit()
+                added_users += 1
+            participant = ContestParticipant.query.filter_by(
+                contest_id=contest_id, user_id=user.id
+            ).first()
+            if not participant:
+                participant = ContestParticipant(
+                    contest_id=contest_id,
+                    user_id=user.id,
+                )
+                db.session.add(participant)
+                added_participants += 1
 
-    page = abs(request.args.get("page", 1, type=int))
-    per_page = max(1, min(request.args.get("per_page", 50, type=int), 200))
-    team_filter = (request.args.get("team") or "").strip()
-    challenge_filter = (request.args.get("challenge") or "").strip()
-    start_filter = (request.args.get("start") or "").strip()
-    end_filter = (request.args.get("end") or "").strip()
-    quick_filter = (request.args.get("quick") or "").strip()
-    timezone_offset = (request.args.get("timezone_offset") or "").strip()
+        db.session.commit()
+        flash(f"Imported successfully. Created {added_users} new users, added {added_participants} participants to contest.", "success")
 
-    start_date = _parse_datetime(start_filter)
-    end_date = _parse_datetime(end_filter)
-    quick_range = _parse_quick_range(quick_filter)
-    if quick_range:
-        end_date = dt_datetime.utcnow()
-        start_date = end_date - quick_range
-    else:
-        if start_date:
-            start_date = _local_to_utc(start_date, timezone_offset)
-        if end_date:
-            end_date = _local_to_utc(end_date, timezone_offset)
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Error importing participants: {str(e)}", "danger")
 
-    participant_ids = [cp.user_id for cp in ContestParticipant.query.filter_by(contest_id=contest_id).all()]
-    query = _base_instances_query()
-    if participant_ids:
-        query = query.filter(ChallengeStartTracking.user_id.in_(participant_ids))
-    else:
-        query = query.filter(db.false())
-    query = _apply_team_filter(query, team_filter=team_filter)
-    query = _apply_challenge_filter(query, challenge_filter=challenge_filter)
-    query = _apply_date_filters(query, start_date=start_date, end_date=end_date)
-
-    logs = query.paginate(page=page, per_page=per_page, error_out=False)
-    args = dict(request.args)
-    args.pop("page", None)
-    prev_page = url_for("admin.contest_instances", contest_id=contest_id, page=logs.prev_num, **args) if logs.has_prev else "#"
-    next_page = url_for("admin.contest_instances", contest_id=contest_id, page=logs.next_num, **args) if logs.has_next else "#"
-
-    return render_template(
-        "admin/contests/instances.html",
-        contest=contest,
-        logs=logs,
-        prev_page=prev_page,
-        next_page=next_page,
-        team_filter=team_filter,
-        challenge_filter=challenge_filter,
-        start_filter=start_filter,
-        end_filter=end_filter,
-        quick_filter=quick_filter,
-        timezone_offset=timezone_offset,
-        per_page=per_page,
-    )
-
-
-@admin.route("/admin/contests/<int:contest_id>/tickets")
-@admins_only
-def contest_tickets(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    from CTFd.admin.Ticket import get_all_tickets
-    page = max(request.args.get("page", default=1, type=int) or 1, 1)
-    per_page = min(max(request.args.get("per_page", default=50, type=int) or 50, 1), 100)
-    user_id = request.args.get("user_id", type=int)
-    status = request.args.get("status", type=str)
-    type_ = request.args.get("type", type=str)
-    search = request.args.get("search", type=str)
-
-    participant_ids = [cp.user_id for cp in ContestParticipant.query.filter_by(contest_id=contest_id).all()]
-    response, status_code = get_all_tickets(user_id=user_id, status=status, type_=type_, search=search, page=page, per_page=per_page)
-    if not isinstance(response, dict):
-        response = {}
-    all_tickets = response.get("tickets", []) if status_code == 200 else []
-    tickets = [t for t in (all_tickets or []) if t.get("user_id") in participant_ids] if participant_ids else []
-
-    return render_template(
-        "admin/contests/tickets.html",
-        contest=contest, tickets=tickets, total=len(tickets),
-        per_page=per_page, page=page,
-        status_options=["Open", "Closed"], type_options=["Question", "Error"],
-        selected_user=user_id, selected_status=status, selected_type=type_, search=search,
-    )
-
-
-@admin.route("/admin/contests/<int:contest_id>/audit-logs")
-@admins_only
-def contest_audit_logs(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    from CTFd.admin.admin_audit import (
-        ALL_ACTIONS, TARGET_TYPES, ACTOR_ROLES, ACTION_LABELS,
-        _build_query, _current_filters
-    )
-    page = abs(request.args.get("page", 1, type=int))
-    per_page = max(1, min(request.args.get("per_page", 50, type=int), 200))
-    filters = _current_filters()
-    q = _build_query(**filters)
-    logs = q.paginate(page=page, per_page=per_page, error_out=False)
-    args = dict(request.args)
-    args.pop("page", None)
-    prev_page = url_for("admin.contest_audit_logs", contest_id=contest_id, page=logs.prev_num, **args) if logs.has_prev else "#"
-    next_page = url_for("admin.contest_audit_logs", contest_id=contest_id, page=logs.next_num, **args) if logs.has_next else "#"
-    return render_template(
-        "admin/contests/audit_logs.html",
-        contest=contest, logs=logs,
-        prev_page=prev_page, next_page=next_page,
-        per_page=per_page, all_actions=ALL_ACTIONS,
-        target_types=TARGET_TYPES, actor_roles=ACTOR_ROLES,
-        action_labels=ACTION_LABELS, **filters,
-    )
-
-
-@admin.route("/admin/contests/<int:contest_id>/rewards")
-@admins_only
-def contest_rewards(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    return render_template("admin/contests/rewards.html", contest=contest)
-
-
-@admin.route("/admin/contests/<int:contest_id>/config", methods=["GET", "POST"])
-@admins_only
-def contest_config(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    return render_template("admin/contests/config.html", contest=contest)
-
-
-@admin.route("/admin/contests/<int:contest_id>/monitoring")
-@admins_only
-def contest_monitoring(contest_id):
-    contest = Contest.query.get_or_404(contest_id)
-    return render_template("admin/contests/monitoring.html", contest=contest)
+    return redirect(url_for("admin.semesters_listing"))

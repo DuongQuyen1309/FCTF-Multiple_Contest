@@ -13,11 +13,14 @@ public class FileService : IFileService
     private readonly string _nfsMountPath;
     private readonly AppDbContext _context;
     private readonly AppLogger _logger;
-    public FileService(AppDbContext context, AppLogger logger)
+    private readonly ContestContext _contestContext;
+    
+    public FileService(AppDbContext context, AppLogger logger, ContestContext contestContext)
     {
         _nfsMountPath = ContestantBEConfigHelper.NFS_MOUNT_PATH;
         _context = context;
         _logger = logger;
+        _contestContext = contestContext;
     }
 
     private string GetContentType(string fileName)
@@ -84,8 +87,12 @@ public class FileService : IFileService
                 if (challenge == null)
                     return new FileResult { Success = false, Message = "Access denied" };
 
+                // Check if challenge is visible in current contest
+                var contestChallenge = await _context.ContestsChallenges
+                    .FirstOrDefaultAsync(cc => cc.BankId == file.ChallengeId && cc.ContestId == _contestContext.ContestId);
+
                 // Block files of hidden challenges
-                if (string.Equals(challenge.State, "hidden", StringComparison.OrdinalIgnoreCase))
+                if (contestChallenge == null || string.Equals(contestChallenge.State, "hidden", StringComparison.OrdinalIgnoreCase))
                     return new FileResult { Success = false, Message = "Access denied" };
 
                 // Check prerequisite challenges have been solved by the team
@@ -113,16 +120,21 @@ public class FileService : IFileService
 
                     if (prerequisites is { Count: > 0 })
                     {
+                        // Convert bank challenge IDs to contest challenge IDs
+                        var contestChallengeIds = await _context.ContestsChallenges
+                            .Where(cc => cc.ContestId == _contestContext.ContestId && cc.BankId.HasValue && prerequisites.Contains(cc.BankId.Value))
+                            .Select(cc => cc.Id)
+                            .ToListAsync();
+
                         var solvedIds = await _context.Solves
                             .AsNoTracking()
                             .Where(s => s.TeamId == fileToken.team_id
-                                        && s.ChallengeId != null
-                                        && prerequisites.Contains(s.ChallengeId.Value))
-                            .Select(s => s.ChallengeId!.Value)
+                                        && contestChallengeIds.Contains(s.ContestChallengeId)) // ContestChallengeId is int, not int?
+                            .Select(s => s.ContestChallengeId) // No .Value needed
                             .Distinct()
                             .ToListAsync();
 
-                        if (!prerequisites.All(prereqId => solvedIds.Contains(prereqId)))
+                        if (!contestChallengeIds.All(ccId => solvedIds.Contains(ccId)))
                             return new FileResult { Success = false, Message = "Access denied" };
                     }
                 }
