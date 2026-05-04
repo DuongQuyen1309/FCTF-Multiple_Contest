@@ -422,8 +422,17 @@ def get_teams_cleared_all_challenges_by_topic(team_name=None, country=None, user
         topic_name = topic[0]
 
         # Lấy danh sách ID của các bài trong chủ đề
-        challenge_ids = db.session.query(Challenges.id).filter(Challenges.category == topic_name, Challenges.state != 'hidden').all()
-        challenge_ids = [challenge.id for challenge in challenge_ids]
+        challenge_ids = (
+            db.session.query(ContestsChallenges.bank_id)
+            .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
+            .filter(
+                Challenges.category == topic_name,
+                ContestsChallenges.state != "hidden",
+            )
+            .distinct()
+            .all()
+        )
+        challenge_ids = [row.bank_id for row in challenge_ids]
 
         if not challenge_ids:
             continue  # Bỏ qua nếu không có bài trong chủ đề
