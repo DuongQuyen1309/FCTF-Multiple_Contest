@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 
 @cache.memoize(timeout=60)
-def get_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     """
     Get standings as a list of tuples containing account_id, name, and score e.g. [(account_id, team_name, score)].
 
@@ -44,6 +44,10 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.account_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     """
     Filter out solves and awards that are before a specific time point.
@@ -141,7 +145,7 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
 
 
 @cache.memoize(timeout=60)
-def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_team_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     if fields is None:
         fields = []
     scores = (
@@ -166,6 +170,10 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.team_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     freeze = get_config("freeze")
     if not admin and freeze:
@@ -234,7 +242,7 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
 
 
 @cache.memoize(timeout=60)
-def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_user_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     if fields is None:
         fields = []
     scores = (
@@ -259,6 +267,10 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.user_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     freeze = get_config("freeze")
     if not admin and freeze:

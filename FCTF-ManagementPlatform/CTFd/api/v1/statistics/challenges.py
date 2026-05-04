@@ -248,9 +248,13 @@ class ChallengeAnalytics(Resource):
             .join(account_model, hint_account_join)
             .join(
                 Solves,
+                solve_account_col == hint_account_col,
+            )
+            .join(
+                ContestsChallenges,
                 and_(
-                    Solves.challenge_id == Hints.challenge_id,
-                    solve_account_col == hint_account_col,
+                    Solves.contest_challenge_id == ContestsChallenges.id,
+                    ContestsChallenges.bank_id == Hints.challenge_id,
                 ),
             )
             .filter(*account_filters, *time_filters(HintUnlocks.date), *time_filters(Solves.date))
@@ -268,9 +272,13 @@ class ChallengeAnalytics(Resource):
             .join(account_model, hint_account_join)
             .join(
                 Solves,
+                solve_account_col == hint_account_col,
+            )
+            .join(
+                ContestsChallenges,
                 and_(
-                    Solves.challenge_id == Hints.challenge_id,
-                    solve_account_col == hint_account_col,
+                    Solves.contest_challenge_id == ContestsChallenges.id,
+                    ContestsChallenges.bank_id == Hints.challenge_id,
                 ),
             )
             .filter(*account_filters, *time_filters(HintUnlocks.date), *time_filters(Solves.date))
@@ -469,7 +477,8 @@ class ChallengeAnalytics(Resource):
 
         category_counts = (
             db.session.query(Challenges.category, func.count(Solves.id).label("solves"))
-            .join(Solves, Solves.challenge_id == Challenges.id)
+            .join(ContestsChallenges, ContestsChallenges.bank_id == Challenges.id)
+            .join(Solves, Solves.contest_challenge_id == ContestsChallenges.id)
             .join(Model, Solves.account_id == Model.id)
             .filter(
                 Model.banned == False,
