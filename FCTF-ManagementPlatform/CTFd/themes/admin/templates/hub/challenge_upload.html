@@ -1,0 +1,299 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <h1><i class="bx bx-upload"></i> Upload Challenge</h1>
+    <div class="subtitle">
+        <a href="{{ url_for('admin.hub_challenges') }}" style="color:var(--primary-orange); text-decoration:none;">
+            <i class="bx bx-arrow-back"></i> Back to Challenges Bank
+        </a>
+    </div>
+</div>
+
+<div class="hub-container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="hub-card p-4">
+                <div id="form-alert" class="hub-alert hub-alert-danger d-none"></div>
+
+                <form id="challenge-form" enctype="multipart/form-data">
+
+                    <!-- Name -->
+                    <div class="hub-form-group">
+                        <label for="chal-name">
+                            Challenge Name <span class="text-danger">*</span>
+                            <small class="fw-normal ms-1">(max 40 characters)</small>
+                        </label>
+                        <input type="text" id="chal-name" name="name"
+                               class="hub-form-control"
+                               placeholder="Enter challenge name"
+                               maxlength="40" required>
+                        <small><span id="char-count">0</span>/40 characters</small>
+                    </div>
+
+                    <!-- Category -->
+                    <div class="hub-form-group">
+                        <label for="category">Category <span class="text-danger">*</span></label>
+                        <input type="text" id="category" name="category"
+                               class="hub-form-control"
+                               placeholder="e.g. Web, Pwn, Crypto, Forensics"
+                               maxlength="20" required>
+                        <small>Max 20 characters</small>
+                    </div>
+
+                    <!-- Difficulty -->
+                    <div class="hub-form-group">
+                        <label>Difficulty</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <div id="star-picker">
+                                {% for i in range(1, 6) %}
+                                <i class="far fa-star star-pick"
+                                   data-value="{{ i }}"
+                                   style="cursor:pointer; font-size:1.6rem; color:#dee2e6; margin-right:4px; transition:color .15s;"></i>
+                                {% endfor %}
+                            </div>
+                            <span id="diff-label" class="text-muted" style="font-size:0.9rem;">Not set</span>
+                        </div>
+                        <input type="hidden" name="difficulty" id="difficulty-input" value="">
+                    </div>
+
+                    <!-- Description PDF -->
+                    <div class="hub-form-group">
+                        <label>Description PDF <small class="fw-normal">(max 5MB)</small></label>
+                        <input type="file" name="file" class="hub-form-control"
+                               style="height:auto; padding:6px;" accept=".pdf">
+                    </div>
+
+                    <!-- Description text -->
+                    <div class="hub-form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" name="description"
+                                  class="hub-form-control" rows="5"
+                                  style="height:auto;"
+                                  placeholder="Challenge description (Markdown supported)..."></textarea>
+                    </div>
+
+                    <!-- Time limit + Max attempts + Cooldown -->
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="time_limit">
+                                    Time Limit (min) <span class="text-danger">*</span>
+                                </label>
+                                <input type="number" id="time_limit" name="time_limit"
+                                       class="hub-form-control" min="1" max="30" value="30" required>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="max_attempts">
+                                    Max Attempts <span class="text-danger">*</span>
+                                </label>
+                                <input type="number" id="max_attempts" name="max_attempts"
+                                       class="hub-form-control" min="0" value="0" required>
+                                <small>0 = unlimited</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="hub-form-group">
+                                <label for="cooldown">Cooldown (sec)</label>
+                                <input type="number" id="cooldown" name="cooldown"
+                                       class="hub-form-control" min="0" value="0">
+                                <small>0 = disabled</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Points value -->
+                    <div class="hub-form-group">
+                        <label for="value">Points Value <span class="text-danger">*</span></label>
+                        <input type="number" id="value" name="value"
+                               class="hub-form-control" min="0" placeholder="e.g. 100" required>
+                    </div>
+
+                    <!-- Docker / Deploy -->
+                    <div class="mb-3 mt-1" style="font-weight:700; font-size:0.8rem; text-transform:uppercase; color:var(--text-medium); letter-spacing:0.5px; border-bottom:1px solid var(--border-light); padding-bottom:6px;">
+                        Deployment (Optional)
+                    </div>
+
+                    <div class="hub-form-group">
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="checkbox" id="setup_docker" name="require_deploy"
+                                   value="true" style="width:16px; height:16px; accent-color:var(--primary-orange);">
+                            <label for="setup_docker" class="mb-0" style="font-weight:500; cursor:pointer;">
+                                Enable Docker deployment
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="docker-section" class="d-none">
+                        <div class="hub-form-group">
+                            <label>Docker ZIP File</label>
+                            <input type="file" name="docker_file" class="hub-form-control"
+                                   style="height:auto; padding:6px;" accept=".zip">
+                            <small>ZIP archive containing Dockerfile and challenge files</small>
+                        </div>
+
+                        <div id="expose-port-section" class="hub-form-group">
+                            <label for="expose_port">Exposed Port</label>
+                            <input type="number" id="expose_port" name="expose_port"
+                                   class="hub-form-control" placeholder="e.g. 8080">
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="hub-form-group">
+                                    <label for="connection_protocol">Protocol</label>
+                                    <select id="connection_protocol" name="connection_protocol"
+                                            class="hub-form-control">
+                                        <option value="http">HTTP</option>
+                                        <option value="https">HTTPS</option>
+                                        <option value="tcp">TCP</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="hub-form-group">
+                                    <label for="cpu_limit">CPU Limit (m)</label>
+                                    <input type="number" id="cpu_limit" name="cpu_limit"
+                                           class="hub-form-control" placeholder="e.g. 500" min="0">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="hub-form-group">
+                                    <label for="memory_limit">Memory (MB)</label>
+                                    <input type="number" id="memory_limit" name="memory_limit"
+                                           class="hub-form-control" placeholder="e.g. 256" min="0">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="hub-form-group">
+                                    <label for="max_deploy_count">Max Deploys</label>
+                                    <input type="number" id="max_deploy_count" name="max_deploy_count"
+                                           class="hub-form-control" value="0" min="0">
+                                    <small>0 = unlimited</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-3">
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="checkbox" id="use_gvisor" name="use_gvisor"
+                                       value="true" style="width:16px; height:16px; accent-color:var(--primary-orange);">
+                                <label for="use_gvisor" class="mb-0" style="font-size:0.875rem; cursor:pointer;">Use gVisor</label>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <input type="checkbox" id="harden_container" name="harden_container"
+                                       value="true" checked style="width:16px; height:16px; accent-color:var(--primary-orange);">
+                                <label for="harden_container" class="mb-0" style="font-size:0.875rem; cursor:pointer;">Harden container</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden fields -->
+                    <input type="hidden" name="state" value="hidden">
+                    <input type="hidden" name="type" value="standard">
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a href="{{ url_for('admin.hub_challenges') }}" class="hub-btn">Cancel</a>
+                        <button type="submit" class="hub-btn hub-btn-primary" id="submit-btn">
+                            <i class="bx bx-save"></i> Create Challenge
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+<script>
+// Character counter
+document.getElementById('chal-name').addEventListener('input', function() {
+    document.getElementById('char-count').textContent = this.value.length;
+});
+
+// Docker toggle
+document.getElementById('setup_docker').addEventListener('change', function() {
+    document.getElementById('docker-section').classList.toggle('d-none', !this.checked);
+});
+
+// Star rating
+(function() {
+    var input = document.getElementById('difficulty-input');
+    var label = document.getElementById('diff-label');
+    var stars = document.querySelectorAll('#star-picker .star-pick');
+    var labels = ['Very Easy', 'Easy', 'Medium', 'Hard', 'Very Hard'];
+
+    function render(val) {
+        stars.forEach(function(s, idx) {
+            if (idx < val) {
+                s.classList.replace('far', 'fas');
+                s.style.color = '#ff6b35';
+            } else {
+                s.classList.replace('fas', 'far');
+                s.style.color = '#dee2e6';
+            }
+        });
+        label.textContent = val > 0 ? labels[val - 1] : 'Not set';
+    }
+
+    stars.forEach(function(star) {
+        star.addEventListener('mouseenter', function() { render(parseInt(this.dataset.value)); });
+        star.addEventListener('click', function() {
+            var v = parseInt(this.dataset.value);
+            if (parseInt(input.value) === v) { input.value = ''; render(0); }
+            else { input.value = v; render(v); }
+        });
+    });
+    document.getElementById('star-picker').addEventListener('mouseleave', function() {
+        render(parseInt(input.value) || 0);
+    });
+    render(0);
+})();
+
+// Form submit → POST /api/v1/challenges
+document.getElementById('challenge-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    var btn = document.getElementById('submit-btn');
+    var alertEl = document.getElementById('form-alert');
+    alertEl.classList.add('d-none');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bx bx-loader-alt bx-spin"></i> Creating...';
+
+    var formData = new FormData(this);
+
+    // Unchecked checkboxes are not included in FormData; send explicit false
+    if (!document.getElementById('setup_docker').checked) {
+        formData.set('require_deploy', 'false');
+    }
+
+    fetch('/api/v1/challenges', {
+        method: 'POST',
+        headers: { 'CSRF-Token': init.csrfNonce },
+        body: formData
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.success) {
+            window.location.href = '{{ url_for("admin.hub_challenges") }}';
+        } else {
+            var msg = data.message || JSON.stringify(data.errors || data);
+            alertEl.textContent = 'Error: ' + msg;
+            alertEl.classList.remove('d-none');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bx bx-save"></i> Create Challenge';
+        }
+    })
+    .catch(function(err) {
+        alertEl.textContent = 'Network error: ' + err;
+        alertEl.classList.remove('d-none');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bx bx-save"></i> Create Challenge';
+    });
+});
+</script>
+{% endblock %}

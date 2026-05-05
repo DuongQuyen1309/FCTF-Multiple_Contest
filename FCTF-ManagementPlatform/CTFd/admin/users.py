@@ -3,7 +3,7 @@ from sqlalchemy.sql import not_
 from sqlalchemy import or_
 
 from CTFd.admin import admin
-from CTFd.models import Challenges, Tracking, UserFields, Users
+from CTFd.models import Challenges, Tracking, UserFields, Users, ContestsChallenges
 from CTFd.utils import get_config
 from CTFd.utils.decorators import admin_or_jury, admins_only
 from CTFd.utils.modes import TEAMS_MODE
@@ -217,16 +217,14 @@ def users_detail(user_id):
     solves = user.get_solves(admin=True)
 
     # Get challenges that the user is missing
-    if get_config("user_mode") == TEAMS_MODE:
-        if user.team:
-            all_solves = user.team.get_solves(admin=True)
-        else:
-            all_solves = user.get_solves(admin=True)
-    else:
-        all_solves = user.get_solves(admin=True)
+    all_solves = user.get_solves(admin=True)
 
-    solve_ids = [s.challenge_id for s in all_solves]
-    missing = Challenges.query.filter(not_(Challenges.id.in_(solve_ids))).all()
+    solve_cc_ids = [s.contest_challenge_id for s in all_solves]
+    solved_bank_ids = [
+        cc.bank_id for cc in ContestsChallenges.query.filter(ContestsChallenges.id.in_(solve_cc_ids)).all()
+    ] if solve_cc_ids else []
+    
+    missing = Challenges.query.filter(not_(Challenges.id.in_(solved_bank_ids))).all()
 
     # Get IP addresses that the User has used
     addrs = (

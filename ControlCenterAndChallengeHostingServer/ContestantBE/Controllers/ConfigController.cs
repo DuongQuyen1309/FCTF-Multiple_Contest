@@ -1,7 +1,11 @@
 using ContestantBE.Interfaces;
+using ContestantBE.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ResourceShared.Models;
 using ResourceShared.Utils;
+
 namespace ContestantBE.Controllers;
 
 [Authorize]
@@ -9,24 +13,27 @@ public class ConfigController : BaseController
 {
     private readonly CtfTimeHelper _ctfTimeHelper;
     private readonly ConfigHelper _configHelper;
+    private readonly AppDbContext _dbContext;
+    private readonly ContestContext _contestContext;
 
     public ConfigController(
         IUserContext userContext,
         CtfTimeHelper ctfTimeHelper,
-        ConfigHelper configHelper) : base(userContext)
+        ConfigHelper configHelper,
+        AppDbContext dbContext,
+        ContestContext contestContext) : base(userContext)
     {
         _ctfTimeHelper = ctfTimeHelper;
         _configHelper = configHelper;
+        _dbContext = dbContext;
+        _contestContext = contestContext;
     }
 
     private long ToLong(object val)
     {
         if (val == null) return 0;
         if (long.TryParse(val.ToString(), out var result))
-        {
             return result;
-        }
-
         return 0;
     }
 
@@ -37,11 +44,7 @@ public class ConfigController : BaseController
         var endFromConfig = ToLong(_configHelper.GetConfig("end"));
         if (_ctfTimeHelper.CtfEnded())
         {
-            return Ok(new
-            {
-                isSuccess = true,
-                message = "CTF has ended"
-            });
+            return Ok(new { isSuccess = true, message = "CTF has ended" });
         }
         if (_ctfTimeHelper.CtfTime())
         {
@@ -64,7 +67,6 @@ public class ConfigController : BaseController
         }
     }
 
-    // public configuration values used by the contestant portal
     [AllowAnonymous]
     [HttpGet("get_public_config")]
     public IActionResult GetPublicConfig()
@@ -86,25 +88,72 @@ public class ConfigController : BaseController
     }
 
     /// <summary>
-    /// Returns whether challenge content is currently accessible.
-    /// True when CTF is running, or when CTF has ended and view_after_ctf is enabled.
+    /// Trả về trạng thái truy cập challenge dựa trên thời gian của contest đang chọn.
+    /// Nếu không có contest context, fallback về global CTF config.
     /// </summary>
     [HttpGet("contest_access")]
-    public IActionResult GetContestAccess()
+    public async Task<IActionResult> GetContestAccess()
     {
-        var canAccess = _ctfTimeHelper.CtfTime() ||
-                        (_ctfTimeHelper.CtfEnded() && _ctfTimeHelper.ViewAfterCtf());
+        var contestId = _contestContext.ContestId;
 
-        string reason;
+        if (contestId > 0)
+        {
+            var contest = await _dbContext.Contests
+                .AsNoTracking()
+                .Where(c => c.Id == contestId)
+                .Select(c => new { c.StartTime, c.EndTime, c.State })
+                .FirstOrDefaultAsync();
+
+            if (contest != null)
+            {
+                if (contest.State == "ended")
+                {
+                    var viewAfter = _ctfTimeHelper.ViewAfterCtf();
+                    return Ok(new
+                    {
+                        isSuccess = true,
+                        canAccess = viewAfter,
+                        reason = viewAfter ? "ended_view_allowed" : "ended"
+                    });
+                }
+
+                var now = DateTime.UtcNow;
+                bool started = !contest.StartTime.HasValue || now >= contest.StartTime.Value;
+                bool ended = contest.EndTime.HasValue && now > contest.EndTime.Value;
+                bool active = started && !ended;
+
+                string reason;
+                if (active)
+                    reason = "active";
+                else if (ended && _ctfTimeHelper.ViewAfterCtf())
+                    reason = "ended_view_allowed";
+                else if (ended)
+                    reason = "ended";
+                else
+                    reason = "not_started";
+
+                return Ok(new
+                {
+                    isSuccess = true,
+                    canAccess = active || (ended && _ctfTimeHelper.ViewAfterCtf()),
+                    reason
+                });
+            }
+        }
+
+        // Fallback: global CTF config
+        var globalCanAccess = _ctfTimeHelper.CtfTime() ||
+                              (_ctfTimeHelper.CtfEnded() && _ctfTimeHelper.ViewAfterCtf());
+        string globalReason;
         if (_ctfTimeHelper.CtfTime())
-            reason = "active";
+            globalReason = "active";
         else if (_ctfTimeHelper.CtfEnded() && _ctfTimeHelper.ViewAfterCtf())
-            reason = "ended_view_allowed";
+            globalReason = "ended_view_allowed";
         else if (_ctfTimeHelper.CtfEnded())
-            reason = "ended";
+            globalReason = "ended";
         else
-            reason = "not_started";
+            globalReason = "not_started";
 
-        return Ok(new { isSuccess = true, canAccess, reason });
+        return Ok(new { isSuccess = true, canAccess = globalCanAccess, reason = globalReason });
     }
 }

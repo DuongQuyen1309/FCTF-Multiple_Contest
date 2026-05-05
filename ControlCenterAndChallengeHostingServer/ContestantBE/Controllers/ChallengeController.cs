@@ -279,9 +279,16 @@ public class ChallengeController : BaseController
                 var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(bank.Requirements);
                 if (requirementsObj?.prerequisites != null && requirementsObj.prerequisites.Count > 0)
                 {
+                    // Get all contest challenge IDs first
+                    var contestChallengeIds = await _context.ContestsChallenges
+                        .AsNoTracking()
+                        .Where(c => c.ContestId == contestId)
+                        .Select(c => c.Id)
+                        .ToListAsync();
+
                     var solvedBankIds = (await _context.Solves
                         .AsNoTracking()
-                        .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                        .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
                         .Select(s => s.ContestChallenge.BankId!.Value)
                         .ToListAsync()).ToHashSet();
 
@@ -354,7 +361,7 @@ public class ChallengeController : BaseController
                     Type = SubmissionTypes.CORRECT,
                     Solf = new Solf
                     {
-                        ContestId = contestId,
+                        // ContestId is NotMapped - don't set it
                         ContestChallengeId = cc.Id,
                         UserId = user?.Id,
                         TeamId = teamId,
@@ -527,9 +534,16 @@ public class ChallengeController : BaseController
                 var requirementsObj = System.Text.Json.JsonSerializer.Deserialize<ChallengeRequirementsDTO>(bank.Requirements);
                 if (requirementsObj?.prerequisites != null && requirementsObj.prerequisites.Count > 0)
                 {
+                    // Get all contest challenge IDs first
+                    var contestChallengeIds = await _context.ContestsChallenges
+                        .AsNoTracking()
+                        .Where(c => c.ContestId == contestId)
+                        .Select(c => c.Id)
+                        .ToListAsync();
+
                     var solvedBankIds = (await _context.Solves
                         .AsNoTracking()
-                        .Where(s => s.ContestId == contestId && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
+                        .Where(s => contestChallengeIds.Contains(s.ContestChallengeId) && s.TeamId == teamId && s.ContestChallenge.BankId.HasValue)
                         .Select(s => s.ContestChallenge.BankId!.Value)
                         .ToListAsync()).ToHashSet();
 

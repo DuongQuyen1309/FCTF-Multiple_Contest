@@ -1,7 +1,7 @@
 from sqlalchemy.sql.expression import union_all
 
 from CTFd.cache import cache
-from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, Solves, Teams, Users, db
+from CTFd.models import Achievements, AwardBadges, Awards, Brackets, Challenges, ContestsChallenges, Solves, Teams, Users, db
 from CTFd.utils import get_config
 from CTFd.utils.dates import unix_time_to_utc
 from CTFd.utils.modes import get_model
@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 
 @cache.memoize(timeout=60)
-def get_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     """
     Get standings as a list of tuples containing account_id, name, and score e.g. [(account_id, team_name, score)].
 
@@ -25,12 +25,12 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
     scores = (
         db.session.query(
             Solves.account_id.label("account_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.account_id)
     )
 
@@ -44,6 +44,10 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.account_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     """
     Filter out solves and awards that are before a specific time point.
@@ -141,18 +145,18 @@ def get_standings(count=None, bracket_id=None, admin=False, fields=None):
 
 
 @cache.memoize(timeout=60)
-def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_team_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     if fields is None:
         fields = []
     scores = (
         db.session.query(
             Solves.team_id.label("team_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.team_id)
     )
 
@@ -166,6 +170,10 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.team_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     freeze = get_config("freeze")
     if not admin and freeze:
@@ -234,18 +242,18 @@ def get_team_standings(count=None, bracket_id=None, admin=False, fields=None):
 
 
 @cache.memoize(timeout=60)
-def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
+def get_user_standings(count=None, bracket_id=None, admin=False, fields=None, contest_id=None):
     if fields is None:
         fields = []
     scores = (
         db.session.query(
             Solves.user_id.label("user_id"),
-            db.func.sum(Challenges.value).label("score"),
+            db.func.sum(ContestsChallenges.value).label("score"),
             db.func.max(Solves.id).label("id"),
             db.func.max(Solves.date).label("date"),
         )
-        .join(Challenges)
-        .filter(Challenges.value != 0)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .filter(ContestsChallenges.value != 0)
         .group_by(Solves.user_id)
     )
 
@@ -259,6 +267,10 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
         .filter(Awards.value != 0)
         .group_by(Awards.user_id)
     )
+
+    if contest_id is not None:
+        scores = scores.filter(ContestsChallenges.contest_id == contest_id)
+        awards = awards.filter(Awards.contest_id == contest_id)
 
     freeze = get_config("freeze")
     if not admin and freeze:
@@ -285,7 +297,7 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
                 Users.id.label("user_id"),
                 Users.oauth_id.label("oauth_id"),
                 Users.name.label("name"),
-                Users.team_id.label("team_id"),
+                db.literal(None).label("team_id"),
                 Users.hidden,
                 Users.banned,
                 sumscores.columns.score,
@@ -304,7 +316,7 @@ def get_user_standings(count=None, bracket_id=None, admin=False, fields=None):
                 Users.id.label("user_id"),
                 Users.oauth_id.label("oauth_id"),
                 Users.name.label("name"),
-                Users.team_id.label("team_id"),
+                db.literal(None).label("team_id"),
                 sumscores.columns.score,
                 *fields,
             )
@@ -336,21 +348,21 @@ def getSubmitStandings(count=None, bracket_id=None, fields=None, challenge_id=No
         db.session.query(
             Solves.team_id.label("team_id"),
             Teams.name.label("team_name"),
-            Challenges.id.label("challenge_id"),
-            Challenges.name.label("challenge_name"),
+            ContestsChallenges.id.label("challenge_id"),
+            ContestsChallenges.name.label("challenge_name"),
             Solves.date.label("submission_time"),
             Teams.country.label("country"),
 
             *fields,
         )
         .join(Teams, Solves.team_id == Teams.id)
-        .join(Challenges, Solves.challenge_id == Challenges.id)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
         .order_by(Solves.date.asc())
     )
 
    
     if challenge_id is not None:
-        submissions_query = submissions_query.filter(Solves.challenge_id == challenge_id)
+        submissions_query = submissions_query.filter(Solves.contest_challenge_id == challenge_id)
 
     
     if bracket_id is not None:
@@ -373,20 +385,20 @@ def get_team_challenge_counts(team_name=None, min_solved_count=None, hidden=None
         db.session.query(
             Teams.id.label("team_id"),
             Teams.name.label("team_name"),
-            func.count(Solves.challenge_id).label("solved_challenges_count"),
+            func.count(Solves.contest_challenge_id).label("solved_challenges_count"),
             Teams.hidden,
             Teams.banned
         )
         .join(Solves, Solves.team_id == Teams.id)
         .group_by(Teams.id)
-        .order_by(func.count(Solves.challenge_id).desc())
+        .order_by(func.count(Solves.contest_challenge_id).desc())
     )
 
     if team_name:
         query = query.filter(Teams.name.ilike(f"%{team_name}%"))
 
     if min_solved_count is not None:
-        query = query.having(func.count(Solves.challenge_id) >= min_solved_count)
+        query = query.having(func.count(Solves.contest_challenge_id) >= min_solved_count)
 
     if not is_admin:
         query = query.filter(Teams.hidden == False, Teams.banned == False)
@@ -410,8 +422,17 @@ def get_teams_cleared_all_challenges_by_topic(team_name=None, country=None, user
         topic_name = topic[0]
 
         # Lấy danh sách ID của các bài trong chủ đề
-        challenge_ids = db.session.query(Challenges.id).filter(Challenges.category == topic_name, Challenges.state != 'hidden').all()
-        challenge_ids = [challenge.id for challenge in challenge_ids]
+        challenge_ids = (
+            db.session.query(ContestsChallenges.bank_id)
+            .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
+            .filter(
+                Challenges.category == topic_name,
+                ContestsChallenges.state != "hidden",
+            )
+            .distinct()
+            .all()
+        )
+        challenge_ids = [row.bank_id for row in challenge_ids]
 
         if not challenge_ids:
             continue  # Bỏ qua nếu không có bài trong chủ đề
@@ -421,11 +442,12 @@ def get_teams_cleared_all_challenges_by_topic(team_name=None, country=None, user
             db.session.query(
                 Teams.id.label("team_id"),
                 Teams.name.label("team_name"),
-                func.count(Solves.challenge_id).label("solved_count"),
+                func.count(Solves.contest_challenge_id).label("solved_count"),
                 func.max(Solves.date).label("last_submission_time")
             )
             .join(Solves, (Solves.team_id == Teams.id) & (Solves.type == "correct"))
-            .filter(Solves.challenge_id.in_(challenge_ids))
+            .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+            .filter(ContestsChallenges.bank_id.in_(challenge_ids))
             .group_by(Teams.id)
         )
 
@@ -440,7 +462,7 @@ def get_teams_cleared_all_challenges_by_topic(team_name=None, country=None, user
             teams_query = teams_query.filter(Teams.country.ilike(f"%{country}%"))
 
         # Tìm các đội đã giải hết tất cả bài trong chủ đề
-        all_cleared_teams = teams_query.having(func.count(Solves.challenge_id) == len(challenge_ids)).all()
+        all_cleared_teams = teams_query.having(func.count(Solves.contest_challenge_id) == len(challenge_ids)).all()
 
         if all_cleared_teams:
             # Nếu có đội giải hết, thêm trạng thái CLEARED
@@ -456,7 +478,7 @@ def get_teams_cleared_all_challenges_by_topic(team_name=None, country=None, user
         else:
             # Nếu không đội nào giải hết, xếp hạng theo số bài giải được và thời gian nhanh nhất
             top_teams = teams_query.order_by(
-                func.count(Solves.challenge_id).desc(),
+                func.count(Solves.contest_challenge_id).desc(),
                 func.max(Solves.date).asc()
             ).all()
             cleared_teams[topic_name] = [
@@ -478,7 +500,7 @@ def create_achievement_for_team_or_user(team_or_user, challenge, name):
     """
     # Kiểm tra xem đã có thành tích cho đội này và challenge này chưa
     existing_achievement = db.session.query(Achievements).filter_by(
-        challenge_id=challenge.id,
+        contest_challenge_id=challenge.id,
         name=name,
         team_id=team_or_user.id if isinstance(team_or_user, Teams) else None,
         user_id=team_or_user.id if isinstance(team_or_user, Users) else None
@@ -487,7 +509,7 @@ def create_achievement_for_team_or_user(team_or_user, challenge, name):
     if not existing_achievement:
         achievement = Achievements(
             name=name,
-            challenge_id=challenge.id,
+            contest_challenge_id=challenge.id,
             team_id=team_or_user.id if isinstance(team_or_user, Teams) else None,
             user_id=team_or_user.id if isinstance(team_or_user, Users) else None
         )
@@ -502,7 +524,7 @@ def get_teams_completed_challenges_in_topic(topic):
     completed_teams = set()
 
     for challenge in challenges_in_topic:
-        solves = db.session.query(Solves).filter_by(challenge_id=challenge.id, type="correct").all()
+        solves = db.session.query(Solves).join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id).filter(ContestsChallenges.bank_id == challenge.id, Solves.type == "correct").all()
         for solve in solves:
             completed_teams.add(solve.team_id)
 
@@ -514,7 +536,7 @@ def team_completed_all_challenges_in_topic(team, topic):
     """
     challenges_in_topic = db.session.query(Challenges).filter_by(topic_id=topic.id).all()
     for challenge in challenges_in_topic:
-        solve = db.session.query(Solves).filter_by(team_id=team.id, challenge_id=challenge.id, type="correct").first()
+        solve = db.session.query(Solves).join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id).filter(Solves.team_id == team.id, ContestsChallenges.bank_id == challenge.id, Solves.type == "correct").first()
         if not solve:
             return False  # Nếu đội chưa hoàn thành challenge nào đó, trả về False
     return True  # Nếu đội hoàn thành tất cả các challenge, trả về True
@@ -526,8 +548,8 @@ def calculate_and_assign_awards():
     """
     from datetime import datetime
 
-    # Lấy danh sách các challenges
-    challenges = db.session.query(Challenges).all()
+    # Lấy danh sách các challenges instance
+    challenges = db.session.query(ContestsChallenges).all()
 
     # Ví dụ tiêu chí đạt giải (có thể thay đổi theo yêu cầu)
     criteria = [
@@ -543,7 +565,7 @@ def calculate_and_assign_awards():
         # Lấy tất cả các bài solve cho challenge này, sắp xếp theo thời gian
         solves = (
             db.session.query(Solves)
-            .filter(Solves.challenge_id == challenge.id, Solves.type == "correct")
+            .filter(Solves.contest_challenge_id == challenge.id, Solves.type == "correct")
             .order_by(Solves.date.asc())
             .all()
         )
@@ -556,7 +578,7 @@ def calculate_and_assign_awards():
                 existing_achievement = (
                     db.session.query(Achievements)
                     .filter(
-                        Achievements.challenge_id == challenge.id,
+                        Achievements.contest_challenge_id == challenge.id,
                         Achievements.name == criterion["name"],
                         Achievements.team_id == achievement_solve.team_id,
                         Achievements.user_id == achievement_solve.user_id,
@@ -569,7 +591,7 @@ def calculate_and_assign_awards():
                     award_badge = (
                         db.session.query(AwardBadges)
                         .filter(
-                            AwardBadges.challenge_id == challenge.id,
+                            AwardBadges.contest_challenge_id == challenge.id,
                             AwardBadges.name == criterion["name"],
                         )
                         .first()
@@ -577,7 +599,7 @@ def calculate_and_assign_awards():
                     if not award_badge:
                         award_badge = AwardBadges(
                             name=criterion["name"],
-                            challenge_id=challenge.id,
+                            contest_challenge_id=challenge.id,
                             team_id=achievement_solve.team_id,
                             user_id=achievement_solve.user_id,
                         )
@@ -587,7 +609,7 @@ def calculate_and_assign_awards():
                     # Tạo Achievement
                     achievement = Achievements(
                         name=criterion["name"],
-                        challenge_id=challenge.id,
+                        contest_challenge_id=challenge.id,
                         team_id=achievement_solve.team_id,
                         user_id=achievement_solve.user_id,
                         achievement_id=award_badge.id,
@@ -614,7 +636,7 @@ def create_achievement_for_team_or_user(team_or_user, challenge, name):
     Hàm hỗ trợ tạo thành tích cho đội hoặc người dùng.
     """
     existing_achievement = db.session.query(Achievements).filter_by(
-        challenge_id=challenge.id,
+        contest_challenge_id=challenge.id,
         name=name,
         team_id=team_or_user.team_id if isinstance(team_or_user, Solves) else None,
         user_id=team_or_user.user_id if isinstance(team_or_user, Solves) else None
@@ -623,7 +645,7 @@ def create_achievement_for_team_or_user(team_or_user, challenge, name):
     if not existing_achievement:
         achievement = Achievements(
             name=name,
-            challenge_id=challenge.id,
+            contest_challenge_id=challenge.id,
             team_id=team_or_user.team_id if isinstance(team_or_user, Solves) else None,
             user_id=team_or_user.user_id if isinstance(team_or_user, Solves) else None
         )
@@ -644,12 +666,13 @@ def get_last_submission_user(challenge_id=None, team_id=None):
         )
         .join(Teams, Solves.team_id == Teams.id)
         .join(Users, Solves.user_id == Users.id)
-        .join(Challenges, Solves.challenge_id == Challenges.id)
+        .join(ContestsChallenges, Solves.contest_challenge_id == ContestsChallenges.id)
+        .join(Challenges, ContestsChallenges.bank_id == Challenges.id)
         .order_by(Solves.date.desc())  # Sắp xếp theo thời gian nộp bài mới nhất
     )
 
     if challenge_id is not None:
-        query = query.filter(Solves.challenge_id == challenge_id)
+        query = query.filter(ContestsChallenges.bank_id == challenge_id)
 
     if team_id is not None:
         query = query.filter(Solves.team_id == team_id)

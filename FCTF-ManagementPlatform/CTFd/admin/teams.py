@@ -4,7 +4,7 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.sql import not_
 
 from CTFd.admin import admin
-from CTFd.models import Brackets, Challenges, Teams, Tracking, Users, db
+from CTFd.models import Brackets, Challenges, Teams, Tracking, Users, ContestParticipants, db
 from CTFd.utils.decorators import admin_or_jury, admins_only
 
 
@@ -44,8 +44,11 @@ def teams_listing():
     from sqlalchemy import func as sa_func
     member_counts = {
         team_id: count
-        for team_id, count in db.session.query(UsersTeams.team_id, sa_func.count(UsersTeams.user_id))
-        .group_by(UsersTeams.team_id)
+        for team_id, count in db.session.query(
+            ContestParticipants.team_id, func.count(ContestParticipants.user_id.distinct())
+        )
+        .filter(ContestParticipants.team_id.isnot(None))
+        .group_by(ContestParticipants.team_id)
         .all()
     }
 
@@ -79,7 +82,8 @@ def teams_detail(team_id):
     team = Teams.query.filter_by(id=team_id).first_or_404()
 
     # Get members
-    members = team.members
+    participants = ContestParticipants.query.filter_by(team_id=team_id).all()
+    members = list({p.user for p in participants if p.user})
     member_ids = [member.id for member in members]
 
     # Get Solves for all members

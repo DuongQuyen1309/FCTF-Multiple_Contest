@@ -99,7 +99,7 @@ class ServerConfig(object):
             ))
         else:
             # default to local SQLite DB
-            DATABASE_URL = f"mysql+pymysql:///{os.path.dirname(os.path.abspath(__file__))}/ctfd.db"
+            DATABASE_URL = f"sqlite:///{os.path.dirname(os.path.abspath(__file__))}/ctfd.db"
 
     REDIS_URL: str = empty_str_cast(config_ini["server"]["REDIS_URL"])
 

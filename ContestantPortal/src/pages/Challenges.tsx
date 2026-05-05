@@ -1,7 +1,8 @@
 import { Typography, CircularProgress, Box, Tabs, Tab, Tooltip } from '@mui/material';
 import { motion, AnimatePresence } from 'framer-motion';
 import React, { useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams } from 'react-router-dom';
+import { authService } from '../services/authService';
 import { challengeService } from '../services/challengeService';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -29,7 +30,6 @@ import {
   ChallengeListSkeleton,
   ChallengeDetailSkeleton
 } from '../components/Skeleton';
-import { authService } from '../services/authService';
 import { challengeTimerService } from '../services/challengeTimerService';
 
 // Setup PDF worker - mirror legacy behavior using jsDelivr CDN (handles MIME/CORS)
@@ -94,8 +94,20 @@ interface Hint {
   isUnlocked?: boolean;
 }
 
+function getContestIdFromToken(): number {
+  const token = authService.getToken();
+  if (!token) return 0;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return parseInt(payload.contestId) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export function Challenges() {
   const { theme } = useTheme();
+  const { contestId: contestIdParam } = useParams<{ contestId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
@@ -221,6 +233,21 @@ export function Challenges() {
       try {
         setLoading(true);
 
+        // Đảm bảo JWT chứa đúng contestId từ URL.
+        // Trường hợp user vào URL trực tiếp hoặc chuyển trang mà chưa gọi selectContest.
+        const urlContestId = contestIdParam ? parseInt(contestIdParam) : 0;
+        const tokenContestId = getContestIdFromToken();
+        if (urlContestId > 0 && urlContestId !== tokenContestId) {
+          try {
+            await authService.selectContest(urlContestId);
+          } catch (e) {
+            console.error('[Challenges] Auto-selectContest failed:', e);
+            setError('Cannot access this contest. Please make sure you are registered.');
+            setLoading(false);
+            return;
+          }
+        }
+
         const access = await challengeService.getContestAccess();
         setIsContestActive(access.reason === 'active');
         setContestReason(access.reason);
@@ -252,7 +279,7 @@ export function Challenges() {
     };
 
     fetchDataAsync();
-  }, []);
+  }, [contestIdParam]);
 
   // Separate effect to handle opening challenge from URL params (only on mount)
   useEffect(() => {

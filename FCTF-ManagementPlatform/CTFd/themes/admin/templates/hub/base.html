@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>FCTF Management Hub</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+    {% if Configs.ctf_small_icon %}
+    <link rel="shortcut icon" href="{{ Configs.ctf_small_icon }}" type="image/x-icon">
+    {% else %}
+    <link rel="shortcut icon" href="{{ url_for('views.themes', theme='admin', path='img/favicon.ico') }}" type="image/x-icon">
+    {% endif %}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+    <script type="text/javascript">
+        var init = {
+            'urlRoot': "{{ request.script_root }}",
+            'csrfNonce': "{{ Session.nonce }}",
+            'userId': {{ Session.id }},
+            'userName': {{ User.name | tojson }},
+        }
+    </script>
+    {% block stylesheets %}{% endblock %}
+    <style>
+        :root {
+            --primary-orange: #ff6b35;
+            --primary-orange-dark: #e85d2a;
+            --bg-white: #ffffff;
+            --bg-light: #f8f9fa;
+            --bg-sidebar: #F9F3F1;
+            --text-dark: #2c3e50;
+            --text-medium: #495057;
+            --text-light: #6c757d;
+            --border-light: #e8e8e8;
+            --border-medium: #dee2e6;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 8px rgba(0,0,0,0.08);
+        }
+
+        body {
+            display: flex;
+            margin: 0;
+            height: 100vh;
+            overflow-x: hidden;
+            font-family: "Space Mono", monospace;
+            background: var(--bg-white);
+            color: var(--text-dark);
+        }
+
+        /* ── Sidebar ──────────────────────────────────────────────── */
+        #hub-sidebar {
+            width: 250px;
+            height: 100vh;
+            position: fixed;
+            top: 0; left: 0;
+            background: var(--bg-sidebar);
+            color: var(--text-light);
+            padding: 12px 14px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            box-shadow: var(--shadow-md);
+            z-index: 100;
+        }
+
+        #hub-sidebar::-webkit-scrollbar { width: 5px; }
+        #hub-sidebar::-webkit-scrollbar-thumb { background: rgba(255,107,53,0.3); border-radius: 3px; }
+
+        .hub-logo-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        .hub-logo-container img { max-width: 60%; height: auto; }
+        .hub-badge {
+            background: var(--primary-orange);
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-top: 4px;
+        }
+
+        .hub-section-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-light);
+            padding: 10px 12px 4px;
+            width: 100%;
+        }
+
+        #hub-sidebar a.hub-nav-link {
+            color: var(--text-medium);
+            display: flex;
+            align-items: center;
+            padding: 9px 12px;
+            margin-bottom: 2px;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.875rem;
+            border-radius: 6px;
+            transition: all 0.2s ease;
+            width: 100%;
+        }
+        #hub-sidebar a.hub-nav-link i {
+            margin-right: 10px;
+            font-size: 1.15em;
+            min-width: 20px;
+        }
+        #hub-sidebar a.hub-nav-link:hover {
+            background-color: var(--primary-orange);
+            color: #fff;
+            transform: translateX(3px);
+        }
+        #hub-sidebar a.hub-nav-link.active {
+            background-color: var(--primary-orange);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(255,107,53,0.3);
+            font-weight: 600;
+        }
+
+        .hub-divider {
+            width: 100%;
+            height: 1px;
+            background: var(--border-light);
+            margin: 8px 0;
+        }
+
+        /* ── Content ──────────────────────────────────────────────── */
+        #hub-content {
+            margin-left: 250px;
+            padding: 0;
+            width: calc(100% - 250px);
+            min-height: 100vh;
+            background: var(--bg-white);
+            overflow-y: auto;
+        }
+
+        /* ── Page Header ─────────────────────────────────────────── */
+        .hub-page-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-bottom: 1px solid var(--border-light);
+            padding: 1.25rem 2.5rem;
+            margin-bottom: 0;
+        }
+        .hub-page-header h1 {
+            font-family: "Space Mono", monospace;
+            font-size: 1.45rem;
+            font-weight: 700;
+            color: var(--text-dark);
+            margin: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .hub-page-header h1 i { color: var(--primary-orange); font-size: 1.5rem; }
+        .hub-page-header .subtitle {
+            font-size: 0.82rem;
+            color: var(--text-light);
+            margin-top: 4px;
+        }
+
+        /* ── Container ───────────────────────────────────────────── */
+        .hub-container {
+            padding: 1.5rem 2.5rem;
+        }
+
+        /* ── Cards ───────────────────────────────────────────────── */
+        .hub-card {
+            background: #fff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+        .hub-card:hover { box-shadow: var(--shadow-md); }
+
+        /* ── Table ───────────────────────────────────────────────── */
+        .hub-table-wrapper {
+            background: #fff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+        .hub-table {
+            margin: 0;
+            font-size: 0.855rem;
+            width: 100%;
+        }
+        .hub-table thead th {
+            background: var(--bg-light);
+            border-bottom: 2px solid var(--border-light);
+            color: var(--text-medium);
+            font-weight: 600;
+            padding: 0.6rem 0.8rem;
+            text-transform: uppercase;
+            font-size: 0.72rem;
+            letter-spacing: 0.4px;
+            white-space: nowrap;
+        }
+        .hub-table tbody tr {
+            border-bottom: 1px solid #f1f1f1;
+            transition: background 0.15s ease;
+        }
+        .hub-table tbody tr:hover { background: #fffbf9; cursor: pointer; }
+        .hub-table tbody td {
+            padding: 0.55rem 0.8rem;
+            color: var(--text-medium);
+            vertical-align: middle;
+        }
+        .hub-table tbody td a {
+            color: var(--text-dark);
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.2s ease;
+        }
+        .hub-table tbody td a:hover { color: var(--primary-orange); }
+
+        /* ── Buttons ─────────────────────────────────────────────── */
+        .hub-btn {
+            border: 1px solid var(--border-medium);
+            background: #fff;
+            color: var(--text-medium);
+            padding: 0.35rem 0.85rem;
+            border-radius: 5px;
+            font-size: 0.855rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .hub-btn:hover { border-color: var(--primary-orange); color: var(--primary-orange); background: #fff5f2; text-decoration: none; }
+        .hub-btn-primary { background: var(--primary-orange); color: #fff !important; border-color: var(--primary-orange); }
+        .hub-btn-primary:hover { background: var(--primary-orange-dark); border-color: var(--primary-orange-dark); color: #fff !important; }
+        .hub-btn-danger { border-color: #dc3545; color: #dc3545; }
+        .hub-btn-danger:hover { background: #dc3545; color: #fff !important; }
+        .hub-btn-sm { padding: 0.25rem 0.6rem; font-size: 0.8rem; }
+
+        /* ── Badges ──────────────────────────────────────────────── */
+        .hub-badge-status {
+            display: inline-block;
+            padding: 0.2rem 0.55rem;
+            border-radius: 3px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .hub-badge-draft    { background: #e2e3e5; color: #6c757d; }
+        .hub-badge-visible  { background: #d4edda; color: #155724; }
+        .hub-badge-paused   { background: #fff3cd; color: #856404; }
+        .hub-badge-ended    { background: #f8d7da; color: #721c24; }
+        .hub-badge-info     { background: #d1ecf1; color: #0c5460; }
+        .hub-badge-orange   { background: #ffe8df; color: var(--primary-orange); }
+
+        /* ── Search / Filter bar ─────────────────────────────────── */
+        .hub-filter-bar {
+            background: #fff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            box-shadow: var(--shadow-sm);
+        }
+        .hub-filter-bar label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: var(--text-medium);
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 0.15rem;
+            display: block;
+        }
+        .hub-form-control {
+            border: 1px solid var(--border-medium);
+            border-radius: 5px;
+            padding: 0.35rem 0.65rem;
+            font-size: 0.855rem;
+            width: 100%;
+            height: 36px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            font-family: "Space Mono", monospace;
+        }
+        .hub-form-control:focus {
+            border-color: var(--primary-orange);
+            box-shadow: 0 0 0 0.15rem rgba(255,107,53,0.15);
+            outline: none;
+        }
+
+        /* ── Pagination ──────────────────────────────────────────── */
+        .hub-pagination { display: flex; gap: 4px; margin-top: 1rem; align-items: center; }
+        .hub-page-btn {
+            border: 1px solid var(--border-medium);
+            background: #fff;
+            color: var(--text-medium);
+            padding: 0.28rem 0.65rem;
+            border-radius: 4px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .hub-page-btn:hover, .hub-page-btn.active {
+            background: var(--primary-orange);
+            border-color: var(--primary-orange);
+            color: #fff;
+            text-decoration: none;
+        }
+        .hub-page-btn.disabled { background: var(--bg-light); color: var(--text-light); pointer-events: none; }
+
+        /* ── Form groups ─────────────────────────────────────────── */
+        .hub-form-group { margin-bottom: 1.1rem; }
+        .hub-form-group label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text-medium);
+            margin-bottom: 0.3rem;
+            display: block;
+        }
+        .hub-form-group small { font-size: 0.75rem; color: var(--text-light); }
+
+        /* ── Alert ───────────────────────────────────────────────── */
+        .hub-alert {
+            padding: 0.65rem 1rem;
+            border-radius: 6px;
+            font-size: 0.855rem;
+            margin-bottom: 1rem;
+        }
+        .hub-alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .hub-alert-danger  { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .hub-alert-info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+
+        /* ── Stat card ───────────────────────────────────────────── */
+        .hub-stat-card {
+            background: #fff;
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
+            box-shadow: var(--shadow-sm);
+            text-align: center;
+        }
+        .hub-stat-card .stat-value { font-size: 1.8rem; font-weight: 700; color: var(--primary-orange); }
+        .hub-stat-card .stat-label { font-size: 0.75rem; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+        @media (max-width: 768px) {
+            #hub-sidebar { margin-left: -250px; }
+            #hub-content { margin-left: 0; width: 100%; }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- ── Hub Sidebar ─────────────────────────────────────────── -->
+    <nav id="hub-sidebar" class="d-flex flex-column">
+        <a href="{{ url_for('admin.hub_index') }}" class="hub-logo-container text-decoration-none" style="margin-bottom: 8px;">
+            {% if Configs.ctf_logo %}
+            <img src="{{ url_for('views.files', path=Configs.ctf_logo) }}" alt="F-CTF">
+            {% else %}
+            <img src="{{ url_for('views.themes', theme='admin', path='img/logo.png') }}" alt="F-CTF">
+            {% endif %}
+            <span class="hub-badge">Management Hub</span>
+        </a>
+
+        <div class="hub-section-label">Platform</div>
+
+        <a href="{{ url_for('admin.hub_semesters') }}"
+           class="hub-nav-link {% if request.endpoint == 'admin.hub_semesters' or request.endpoint == 'admin.hub_contests' or request.endpoint == 'admin.hub_semester_new' or request.endpoint == 'admin.hub_contest_new' %}active{% endif %}">
+            <i class="bx bx-calendar"></i> Semesters
+        </a>
+
+        <a href="{{ url_for('admin.hub_users') }}"
+           class="hub-nav-link {% if request.endpoint == 'admin.hub_users' %}active{% endif %}">
+            <i class="bx bx-user"></i> Users
+        </a>
+
+        <a href="{{ url_for('admin.hub_challenges') }}"
+           class="hub-nav-link {% if request.endpoint == 'admin.hub_challenges' or request.endpoint == 'admin.hub_challenge_new' %}active{% endif %}">
+            <i class="bx bx-book-bookmark"></i> Challenges Bank
+        </a>
+
+
+
+        <div class="mt-auto w-100">
+            <a href="{{ url_for('auth.logout') }}" class="hub-nav-link" style="color: var(--text-light);">
+                <i class="bx bx-log-out"></i> Logout
+            </a>
+        </div>
+    </nav>
+
+    <!-- ── Main Content ────────────────────────────────────────── -->
+    <div id="hub-content">
+        <main role="main">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div style="padding: 0.75rem 2.5rem 0;">
+                {% for category, message in messages %}
+                <div class="hub-alert hub-alert-{{ 'success' if category == 'success' else 'danger' if category == 'danger' else 'info' }}">
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.6/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

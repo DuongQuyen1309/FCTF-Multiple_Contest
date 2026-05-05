@@ -1,0 +1,161 @@
+{% extends "admin/hub/base.html" %}
+
+{% block content %}
+<div class="hub-page-header">
+    <div class="d-flex justify-content-between align-items-start">
+        <div>
+            <h1><i class="bx bx-book-bookmark"></i> Challenges Bank</h1>
+            <div class="subtitle">Kho challenge dùng chung — admin/teacher có thể kéo vào contest</div>
+        </div>
+        <a href="{{ url_for('admin.hub_challenge_new') }}" class="hub-btn hub-btn-primary mt-2">
+            <i class="bx bx-upload"></i> Upload Challenge
+        </a>
+    </div>
+</div>
+
+<div class="hub-container">
+    <!-- Filter bar -->
+    <div class="hub-filter-bar">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label>Search Field</label>
+                <select name="field" class="hub-form-control">
+                    <option value="name"   {% if field == 'name'     %}selected{% endif %}>Name</option>
+                    <option value="category" {% if field == 'category' %}selected{% endif %}>Category</option>
+                    <option value="type"  {% if field == 'type'     %}selected{% endif %}>Type</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" class="hub-form-control" placeholder="Search challenges...">
+            </div>
+            <div class="col-md-3">
+                <label>Category</label>
+                <select name="category" class="hub-form-control">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="hub-btn hub-btn-primary flex-grow-1">
+                    <i class="bx bx-search"></i> Search
+                </button>
+                <a href="{{ url_for('admin.hub_challenges') }}" class="hub-btn" title="Reset">
+                    <i class="bx bx-refresh"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Info bar -->
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted" style="font-size:0.82rem;">
+            {{ challenges.total }} challenge(s) found
+        </span>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('admin.challenges_new') }}" class="hub-btn hub-btn-sm">
+                <i class="bx bx-plus"></i> Create in Admin Panel
+            </a>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="hub-table-wrapper">
+        <table class="table hub-table mb-0">
+            <thead>
+                <tr>
+                    <th style="width:50px;">#</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Type</th>
+                    <th class="text-center">Difficulty</th>
+                    <th class="text-center">Imported</th>
+                    <th>Author</th>
+                    <th>Created</th>
+                    <th class="text-center" style="width:100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ch in challenges.items %}
+                <tr onclick="location.href='{{ url_for('admin.challenges_detail', challenge_id=ch.id) }}'">
+                    <td class="text-muted" style="font-size:0.8rem;">{{ ch.id }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.challenges_detail', challenge_id=ch.id) }}" onclick="event.stopPropagation()">
+                            <strong>{{ ch.name }}</strong>
+                        </a>
+                        {% if ch.image_link %}
+                        <span class="hub-badge-status hub-badge-info ms-1" style="font-size:0.65rem;" title="Has Docker image">
+                            <i class="bx bx-server"></i>
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="hub-badge-status hub-badge-orange">{{ ch.category or '—' }}</span>
+                    </td>
+                    <td style="font-size:0.82rem; color:var(--text-light);">{{ ch.type }}</td>
+                    <td class="text-center">
+                        {% if ch.difficulty %}
+                        {% for i in range(ch.difficulty) %}★{% endfor %}{% for i in range(5 - ch.difficulty) %}☆{% endfor %}
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if ch.import_count and ch.import_count > 0 %}
+                        <span class="hub-badge-status hub-badge-visible">{{ ch.import_count }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size:0.82rem; color:var(--text-light);">{{ ch.author_name }}</td>
+                    <td style="font-size:0.8rem; color:var(--text-light);">
+                        {{ ch.created_at.strftime('%d/%m/%Y') if ch.created_at else '—' }}
+                    </td>
+                    <td class="text-center" onclick="event.stopPropagation()">
+                        <a href="{{ url_for('admin.challenges_detail', challenge_id=ch.id) }}"
+                           class="hub-btn hub-btn-sm" title="Edit challenge">
+                            <i class="bx bx-edit"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="text-center py-4 text-muted">
+                        <i class="bx bx-book-open" style="font-size:2rem; display:block; margin-bottom:8px;"></i>
+                        No challenges in the bank yet.
+                        <a href="{{ url_for('admin.hub_challenge_new') }}" style="color:var(--primary-orange); text-decoration:none;">Upload the first one</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if challenges.pages > 1 %}
+    <div class="hub-pagination">
+        <a href="{{ prev_page }}" class="hub-page-btn {% if not challenges.has_prev %}disabled{% endif %}">
+            <i class="bx bx-chevron-left"></i> Prev
+        </a>
+        {% for page_num in challenges.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+            {% if page_num %}
+            <a href="{{ url_for('admin.hub_challenges', page=page_num, q=q, field=field, category=category) }}"
+               class="hub-page-btn {% if page_num == challenges.page %}active{% endif %}">
+                {{ page_num }}
+            </a>
+            {% else %}
+            <span class="hub-page-btn disabled">…</span>
+            {% endif %}
+        {% endfor %}
+        <a href="{{ next_page }}" class="hub-page-btn {% if not challenges.has_next %}disabled{% endif %}">
+            Next <i class="bx bx-chevron-right"></i>
+        </a>
+        <span class="text-muted ms-2" style="font-size:0.8rem;">
+            Page {{ challenges.page }} / {{ challenges.pages }}
+        </span>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

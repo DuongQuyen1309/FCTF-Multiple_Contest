@@ -108,6 +108,10 @@ def challenges_listing():
         # Filter by the challenge writer associated with the current session
         writer_id = session["id"]  # Assuming the session stores the user ID
         filters.append(Challenges.author_id == writer_id)
+        query = Challenges.query.filter(*filters).order_by(Challenges.id.asc())
+    else:
+        # Default fallback - show all challenges
+        query = Challenges.query.filter(*filters).order_by(Challenges.id.asc())
         
     from flask import session
     from CTFd.models import ContestsChallenges

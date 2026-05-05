@@ -51,6 +51,7 @@ def get_user_attrs(user_id):
     if user:
         d = {}
         for field in UserAttrs._fields:
+            # Use getattr with default None for attributes that might not exist (e.g., team_id for admins)
             d[field] = getattr(user, field, None)
         return UserAttrs(**d)
     return None
@@ -103,7 +104,6 @@ def get_current_team_attrs():
         except TypeError:
             clear_user_session(user_id=session["id"])
             user = get_user_attrs(user_id=session["id"])
-
         # Admin users don't have team_id attribute
         if user and hasattr(user, 'team_id') and user.team_id:
             return get_team_attrs(team_id=user.team_id)

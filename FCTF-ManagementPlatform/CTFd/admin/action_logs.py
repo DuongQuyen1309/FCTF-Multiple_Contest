@@ -5,7 +5,7 @@ from io import StringIO
 from flask import Response, render_template, request, stream_with_context, url_for, send_file
 
 from CTFd.admin import admin
-from CTFd.models import ActionLogs, Teams, Users
+from CTFd.models import ActionLogs, Teams, Users, ContestParticipants, db
 from CTFd.utils.decorators import admin_or_jury
 from CTFd.utils import get_config
 
@@ -93,6 +93,11 @@ def _base_action_logs_query():
 			Users.name.label("user_name"),
 		)
 		.join(Users, ActionLogs.userId == Users.id)
+		.outerjoin(ContestParticipants, db.and_(
+			ContestParticipants.user_id == ActionLogs.userId,
+			ContestParticipants.contest_id == ActionLogs.contest_id
+		))
+		.outerjoin(Teams, ContestParticipants.team_id == Teams.id)
 		.order_by(ActionLogs.actionDate.desc())
 	)
 

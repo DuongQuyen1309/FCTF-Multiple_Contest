@@ -5,7 +5,7 @@ from flask_marshmallow import Marshmallow
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import column_property, validates
+from sqlalchemy.orm import column_property, synonym, validates
 
 from CTFd.cache import cache
 
@@ -444,16 +444,20 @@ class Submissions(db.Model):
     __tablename__ = "submissions"
 
     id                   = db.Column(db.Integer, primary_key=True)
-    contest_challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"), nullable=False)
-    user_id  = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"))
-    team_id  = db.Column(db.Integer, db.ForeignKey("teams.id", ondelete="CASCADE"))
+    # FK → ContestsChallenges (instance), không phải bank challenges
+    contest_challenge_id = db.Column(
+        db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    user_id  = db.Column(db.Integer, db.ForeignKey("users.id",  ondelete="CASCADE"))
+    team_id  = db.Column(db.Integer, db.ForeignKey("teams.id",  ondelete="CASCADE"))
     ip       = db.Column(db.String(46))
     provided = db.Column(db.Text)
     type     = db.Column(db.String(32))
     date     = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
-    user = db.relationship("Users", foreign_keys=[user_id], lazy="select")
-    team = db.relationship("Teams", foreign_keys=[team_id], lazy="select")
+    user    = db.relationship("Users",  foreign_keys=[user_id],  lazy="select")
+    team    = db.relationship("Teams",  foreign_keys=[team_id],  lazy="select")
 
     __mapper_args__ = {"polymorphic_on": type}
 
@@ -493,7 +497,10 @@ class Solves(Submissions):
         {},
     )
 
-    id = db.Column(None, db.ForeignKey("submissions.id", ondelete="CASCADE"), primary_key=True)
+    id = db.Column(
+        None, db.ForeignKey("submissions.id", ondelete="CASCADE"), primary_key=True
+    )
+
     contest_challenge_id = column_property(
         db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE")),
         Submissions.contest_challenge_id,
@@ -590,17 +597,15 @@ class Awards(db.Model):
 class AwardBadges(db.Model):
     __tablename__ = "award_badges"
 
-    id           = db.Column(db.Integer, primary_key=True)
-    contest_id   = db.Column(db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True)
-    user_id      = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    team_id      = db.Column(db.Integer, db.ForeignKey("teams.id", ondelete="CASCADE"), nullable=True)
-    challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
+    id         = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("users.id",  ondelete="CASCADE"), nullable=True)
+    team_id      = db.Column(db.Integer, db.ForeignKey("teams.id",  ondelete="CASCADE"), nullable=True)
+    contest_challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
     name         = db.Column(db.String(80))
 
-    user              = db.relationship("Users", foreign_keys=[user_id], lazy="select")
-    team              = db.relationship("Teams", foreign_keys=[team_id], lazy="select")
-    contest           = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
-    contest_challenge = db.relationship("ContestsChallenges", foreign_keys=[challenge_id], lazy="select")
+    user    = db.relationship("Users",  foreign_keys=[user_id],  lazy="select")
+    team    = db.relationship("Teams",  foreign_keys=[team_id],  lazy="select")
+    contest_challenge = db.relationship("ContestsChallenges", foreign_keys=[contest_challenge_id], lazy="select")
 
     def __repr__(self):
         return f"<AwardBadge {self.name!r}>"
@@ -610,18 +615,16 @@ class Achievements(db.Model):
     __tablename__ = "achievements"
 
     id             = db.Column(db.Integer, primary_key=True)
-    contest_id     = db.Column(db.Integer, db.ForeignKey("contests.id", ondelete="SET NULL"), nullable=True)
-    user_id        = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-    team_id        = db.Column(db.Integer, db.ForeignKey("teams.id", ondelete="CASCADE"), nullable=True)
-    challenge_id   = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
+    user_id        = db.Column(db.Integer, db.ForeignKey("users.id",  ondelete="CASCADE"), nullable=True)
+    team_id        = db.Column(db.Integer, db.ForeignKey("teams.id",  ondelete="CASCADE"), nullable=True)
+    contest_challenge_id = db.Column(db.Integer, db.ForeignKey("contests_challenges.id", ondelete="CASCADE"))
     name           = db.Column(db.String(80))
     achievement_id = db.Column(db.Integer, db.ForeignKey("award_badges.id", ondelete="CASCADE"))
 
-    award_badge       = db.relationship("AwardBadges", foreign_keys=[achievement_id], lazy="select")
-    user              = db.relationship("Users", foreign_keys=[user_id], lazy="select")
-    team              = db.relationship("Teams", foreign_keys=[team_id], lazy="select")
-    contest           = db.relationship("Contests", foreign_keys=[contest_id], lazy="select")
-    contest_challenge = db.relationship("ContestsChallenges", foreign_keys=[challenge_id], lazy="select")
+    award_badge       = db.relationship("AwardBadges",          foreign_keys=[achievement_id], lazy="select")
+    user              = db.relationship("Users",                 foreign_keys=[user_id],        lazy="select")
+    team              = db.relationship("Teams",                 foreign_keys=[team_id],        lazy="select")
+    contest_challenge = db.relationship("ContestsChallenges",    foreign_keys=[contest_challenge_id],   lazy="select")
 
     def __repr__(self):
         return f"<Achievement {self.name!r}>"

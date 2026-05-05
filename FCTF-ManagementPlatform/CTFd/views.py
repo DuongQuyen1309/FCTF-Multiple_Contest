@@ -437,7 +437,7 @@ def themes(theme, path):
     abort(404)
 
 
-@views.route("/themes/<theme>/static/<path:path>")
+@views.route("/themes-beta/<theme>/static/<path:path>")
 def themes_beta(theme, path):
     """
     This is a copy of the above themes route used to avoid
