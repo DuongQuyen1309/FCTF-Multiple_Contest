@@ -13,6 +13,7 @@
 9. [Phase 7: Verify & Troubleshoot](#9-phase-7)
 10. [Estimated Cost & Optimization](#10-cost)
 11. [Cleanup / Deleting Resources](#11-cleanup)
+12. [Appendix](#appendix)
 
 ---
 
@@ -1068,3 +1069,121 @@ graph TD
 - [ ] `./manage.sh → 5` (Setup CI/CD) + add the GitHub secrets
 - [ ] Verify all pods are Running
 - [ ] Test web access
+
+---
+
+## Appendix
+
+### A. `manage.sh` menu reference
+
+| Option | Script | Run on | Notes |
+|---|---|---|---|
+| 1) Setup master | `FCTF-k3s-manifest/setup-master.sh` | master | Asks for the TLS SAN and the NFS allowed subnet |
+| 2) Setup worker | `setup-worker.sh` | worker | Asks for the master URL + join token; installs gVisor by default |
+| 3) Install FCTF | `apply-fctf.sh` | master | The 12-step deploy in 7.1 |
+| 4) Setup harbor | `setup-harbor.sh` | master | Needs Docker + a Harbor robot account (7.3) |
+| 5) Setup CI/CD | `cicd-setup.sh` | master | Prints the base64 kubeconfig for GitHub Actions (7.4) |
+| 6) Get Argo token | `prod/sa/argo-workflow/get-token.sh` | master | 1h bearer token for the Argo UI/API |
+| 7) Get master token | *(inline)* | master | `cat /var/lib/rancher/k3s/server/node-token` |
+| 8) Uninstall | `uninstall/uninstall-worker.sh` / `uninstall.sh` | both | Worker first, then master (11.1) |
+| 9) Configure service domains/IP | `configure-domains.sh` | master | Substitutes the 10 placeholder tokens |
+| 0) Exit | — | — | — |
+
+### B. Namespaces and what lives in them
+
+| Namespace | Contents | Installed by |
+|---|---|---|
+| `app` | The 7 platform services + NetworkPolicies + `regcred` | `apply-fctf.sh` |
+| `db` | MariaDB, Redis, RabbitMQ | Helm (`prod/helm.sh`) |
+| `argo` | Argo Workflows server/controller, workflow templates, `global-regcred`, `docker-registry-creds` | Helm + `apply-fctf.sh` |
+| `registry` | Harbor (core, portal, registry, jobservice, internal DB + Redis) | Helm |
+| `monitoring` | Prometheus, Grafana, Loki | Helm |
+| `cattle-system` | Rancher | Helm |
+| `ingress-nginx` | ingress-nginx controller | Helm |
+| `cert-manager` | cert-manager + the `letsencrypt-dev` ClusterIssuer | Helm + `apply-fctf.sh` |
+| `storage` | NFS-backed PVs/PVCs | `apply-fctf.sh` |
+
+The 7 services in `app`: `contestant-portal`, `contestant-be`, `admin-mvc`, `deployment-center`, `deployment-listener`, `deployment-consumer`, `challenge-gateway`.
+
+### C. Default credentials — change all of these
+
+Every value below is committed in the repo. `rotate-service-passwords.sh` (step 12 of `apply-fctf.sh`) rotates the service accounts but **deliberately leaves the four admin accounts alone**.
+
+| What | File | Key | Rotated automatically? |
+|---|---|---|---|
+| Harbor admin | `prod/helm/registry/harbor-values.yaml` | `harborAdminPassword` | ❌ no |
+| Harbor internal DB | same | `database.internal.password` | ✅ |
+| Harbor registry user | same | `registry.credentials.password` | ✅ |
+| Harbor secret key | same | `secretKey` | ✅ |
+| RabbitMQ admin | `prod/helm/db/rabbitmq/rabbitmq-values.yaml` | `auth.password` (`rabbit-admin`) | ❌ no |
+| RabbitMQ producer/consumer | `apply-fctf.sh` | `RABBIT_*_BOOTSTRAP_PASSWORD` | ✅ |
+| Grafana admin | `prod/helm/monitoring/prometheus-stack-values.yaml` | `adminPassword` | ❌ no |
+| Rancher bootstrap | `prod/helm/rancher/rancher-values.yaml` | `bootstrapPassword` | ❌ no |
+| MariaDB | `prod/env/secret/mariadb-auth-secret.yaml` | — | ✅ |
+| Redis | `prod/env/secret/redis-auth-secret.yaml`, `redis-acl-users-secret.yaml` | — | ✅ |
+| App service secrets | `prod/env/secret/*-secret.yaml` (7 files) | — | partly — review each |
+| ACME contact email | `prod/cert-manager/cluster-issuer.yaml` | `spec.acme.email` | ❌ no — currently a developer's address |
+
+### D. Ports reference
+
+| Port | Used by | Opened by (Phase 2) |
+|---|---|---|
+| 22 | SSH | `fctf-allow-ssh` |
+| 80 / 443 | ingress-nginx (all web traffic, HTTP-01 challenges) | `fctf-allow-http-https` |
+| 6443 | K3s API server | `fctf-allow-k3s-api` (internal only — see 7.4 for CI/CD) |
+| 2049 + Calico VXLAN | NFS, pod networking | `fctf-allow-internal` |
+| 30000-32767 | NodePort range | `fctf-allow-nodeports` |
+
+In-cluster service ports (ClusterIP by default, reached through the ingress): `argo-workflows-server:2746`, `rabbitmq:15672`, `prometheus-grafana:80`, `harbor:80`, `rancher:443`.
+
+> [!WARNING]
+> `apply-fctf.sh` defaults to `--service-mode clusterip`, so no app NodePorts are created. If you pass `--service-mode nodeport`, [service-nodeport.yaml](FCTF-k3s-manifest/prod/app/service-nodeport.yaml) publishes `admin-mvc:30080`, `contestant-portal:30517`, `contestant-be:30501` — and the `fctf-allow-nodeports` rule opens 30000-32767 to `0.0.0.0/0`, putting them straight on the internet with no TLS. Worse, [db-nodeport.yaml](FCTF-k3s-manifest/prod/db-nodeport.yaml) (MariaDB `30306`, Redis `30320`) would do the same for your databases — it is **not** applied by any script; do not apply it on a public VM.
+
+### E. Key file paths
+
+| Path | Purpose |
+|---|---|
+| `manage.sh` | The menu wrapper for everything |
+| `FCTF-k3s-manifest/apply-fctf.sh` | Main deploy script |
+| `FCTF-k3s-manifest/prod/helm.sh` | All Helm releases |
+| `FCTF-k3s-manifest/prod/env/secret/`, `env/configmap/` | Per-service secrets and config |
+| `FCTF-k3s-manifest/prod/storage/pv/` | NFS PersistentVolumes (edit the server IP — section 6.3) |
+| `FCTF-k3s-manifest/prod/ingress/nginx/`, `ingress/certificate/` | Ingress rules and Certificates |
+| `FCTF-k3s-manifest/prod/cert-manager/cluster-issuer.yaml` | ACME issuer |
+| `FCTF-k3s-manifest/prod/argo-workflows/` | Challenge build/start workflow templates |
+| `.github/workflows/ci-cd.yml` | CI/CD pipeline (hardcoded registry domain — see 7.4) |
+
+### F. Command cheat sheet
+
+```bash
+# Cluster
+kubectl get nodes -o wide
+kubectl get pods -A
+kubectl get events -A --sort-by='.lastTimestamp' | tail -20
+
+# A single service
+kubectl -n app logs deploy/<service> -f
+kubectl -n app describe pod <pod>
+kubectl -n app rollout restart deployment <service>
+
+# Ingress / TLS
+kubectl get ingress -A
+kubectl get certificates -A
+kubectl describe certificate -n <ns> <name>
+
+# Challenges
+kubectl get wf -n argo
+kubectl get pods -A | grep challenge
+
+# Join token (master)
+sudo cat /var/lib/rancher/k3s/server/node-token
+```
+
+```powershell
+# GCP
+gcloud compute instances list
+gcloud compute instances stop  fctf-master fctf-worker --zone=asia-southeast1-b
+gcloud compute instances start fctf-master fctf-worker --zone=asia-southeast1-b
+gcloud compute ssh fctf-master --zone=asia-southeast1-b
+gcloud compute firewall-rules list --filter="network:fctf-vpc"
+```
