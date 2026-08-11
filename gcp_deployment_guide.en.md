@@ -458,7 +458,7 @@ The `apply-fctf.sh` script automatically performs:
 | 2 | Apply Secrets & ConfigMaps | ~5s |
 | 3 | Apply PVs & PVCs | ~5s |
 | 4 | Install Helm (if not already present) | ~30s |
-| 5 | Deploy Helm charts (MariaDB, Redis, RabbitMQ, Argo, Nginx, Monitoring) | ~5-10 min |
+| 5 | Deploy Helm charts via `prod/helm.sh` (ingress-nginx, cert-manager, MariaDB, Redis, RabbitMQ, Argo Workflows, Loki, Prometheus, **Harbor**, Rancher) | ~5-10 min |
 | 6 | Deploy the 7 app services | ~2 min |
 | 7 | Apply NetworkPolicies | ~5s |
 | 8 | Apply Ingress rules | ~5s |
@@ -497,21 +497,70 @@ argo        argo-workflows-server-xxx               1/1     Running
 
 ### 7.3 Set up Harbor (Optional but Recommended)
 
+Harbor itself was already installed in 7.1 (by `prod/helm.sh`, into namespace `registry`). This step creates the project and robot account, wires the pull secrets, and pushes the first images.
+
 ```bash
 # ===== Step 4: Set up Harbor =====
 ./manage.sh
 # Choose: 4) Setup harbor
 ```
 
+The `setup-harbor.sh` script performs:
+
+| Step | Description | Estimated time |
+|---|---|---|
+| 1 | Install dependencies + Docker Engine (skip with `INSTALL_DOCKER=false`) | ~1-2 min |
+| 2 | Wait for `https://<REGISTRY_DOMAIN>/v2/` to respond (max 180s) | ~10s |
+| 3 | **Pause** — you create the project and robot account in the Harbor UI | manual |
+| 4 | Prompt for the robot username/secret (or pass `CI_USER` / `CI_PASS`) | — |
+| 5 | Apply pull secrets: `regcred` (app), `global-regcred` + `docker-registry-creds` (argo) | ~5s |
+| 6 | `docker login`, then build & push 8 images to `<REGISTRY_DOMAIN>/fctf` | ~15-30 min |
+
+> [!IMPORTANT]
+> DNS for `REGISTRY_DOMAIN` must already point at the master (Phase 6) before you run this — the script exits if Harbor does not answer within 180s. The UI step is mandatory: create a **private** project named exactly `fctf`, plus a robot account with **pull + push** permission.
+
+```bash
+# Afterwards, restart the app so it pulls the freshly pushed images
+kubectl -n app rollout restart deployment --all
+```
+
 > [!NOTE]
-> Harbor is used to store the Docker images for challenges. If you don't install Harbor, you can use DockerHub or GCR (Google Container Registry) instead.
+> Harbor stores the images for both the platform services and the challenges. The default credentials in `harbor-values.yaml` (`harborAdminPassword: "FCTF@2025"`, DB and registry passwords) should be changed back in section 6.3. If you skip Harbor, you can use DockerHub or Artifact Registry instead — but you then have to create those three pull secrets yourself.
 
 ### 7.4 Set up CI/CD (Optional)
 
+Creates a least-privilege ServiceAccount for GitHub Actions and prints a base64 kubeconfig for it.
+
 ```bash
+# ===== Step 5: Set up CI/CD =====
 ./manage.sh
 # Choose: 5) Setup CI/CD
 ```
+
+The `cicd-setup.sh` script performs:
+
+| Step | Description |
+|---|---|
+| 1-3 | ServiceAccount `cicd-deployer` in namespace `app`, plus Role/RoleBinding (patch deployments only) |
+| 4 | Create a long-lived token Secret |
+| 5 | Build a standalone kubeconfig — **prompts for a public IP**, since K3s' local one is `127.0.0.1` |
+| 6 | Print the base64 kubeconfig for the GitHub secret `KUBE_CONFIG` |
+
+Then add these GitHub secrets (`Settings → Secrets and variables → Actions`):
+
+| Secret | Value |
+|---|---|
+| `HARBOR_USERNAME` | Harbor username or robot name |
+| `HARBOR_TOKEN` | Harbor access token / robot secret (not the account password) |
+| `KUBE_CONFIG` | The base64 output from the script |
+
+The pipeline ([.github/workflows/ci-cd.yml](.github/workflows/ci-cd.yml)) triggers on push to `main`, rebuilds only the services whose files changed, pushes `:<sha>` and `:latest` to Harbor, then runs `kubectl set image` + `rollout status` in namespace `app`.
+
+> [!IMPORTANT]
+> Three things are required for the pipeline to actually reach the cluster:
+> - Enter the master's **External IP** at the script's prompt — pressing Enter leaves `127.0.0.1` and every deploy times out. That IP must also be in the master's TLS SAN (section 6.4).
+> - Open port `6443` to the runners; the Phase 2 firewall rule only allows the internal subnet.
+> - Edit the registry domain hardcoded in `ci-cd.yml` (`env.REGISTRY`, `env.IMAGE_BASE`, and the `Login to Harbor` step) — `./manage.sh → 9` does not rewrite that file.
 
 ---
 
@@ -614,6 +663,15 @@ kubectl get pv,pvc -A
 
 # 6. Events (view recent errors)
 kubectl get events -A --sort-by='.lastTimestamp' | tail -20
+
+# 7. TLS certificates (all should be READY=True)
+kubectl get certificates -A
+
+# 8. gVisor RuntimeClass (required by challenge pods)
+kubectl get runtimeclass
+
+# 9. Argo workflows
+kubectl get wf -n argo
 ```
 
 ### 9.2 Access a Service (if you don't have a domain yet)
@@ -639,7 +697,43 @@ kubectl port-forward -n app svc/admin-mvc 4000:8000 --address=0.0.0.0 &
 >   --target-tags=fctf-master
 > ```
 
-### 9.3 Common Troubleshooting
+### 9.3 Verify the management consoles
+
+| Console | URL | Namespace / Service | Default login |
+|---|---|---|---|
+| Harbor (registry) | `https://<REGISTRY_DOMAIN>` | `registry` / `harbor:80` | `admin` / `FCTF@2025` |
+| Argo Workflows | `https://<ARGO_DOMAIN>` | `argo` / `argo-workflows-server:2746` | nginx basic-auth, then a bearer token |
+| RabbitMQ Management | `https://<RABBITMQ_DOMAIN>` | `db` / `rabbitmq:15672` | `rabbit-admin` / `Fctf2025@admin` |
+| Grafana | `https://<GRAFANA_DOMAIN>` | `monitoring` / `prometheus-grafana:80` | `admin` / `Fctf2025@` |
+| Rancher | `https://<RANCHER_DOMAIN>` | `cattle-system` / `rancher:443` | bootstrap password `Ab@123456789` |
+
+```bash
+# Are they running?
+kubectl get pods -n registry
+kubectl get pods -n argo
+kubectl get pods -n db
+kubectl get pods -n monitoring
+kubectl get pods -n cattle-system
+
+# All five ingresses + their TLS secrets
+kubectl get ingress -A
+kubectl get certificates -A
+
+# Reach them without DNS (port-forward from the master)
+kubectl port-forward -n registry svc/harbor 8081:80 --address=0.0.0.0 &
+kubectl port-forward -n argo svc/argo-workflows-server 2746:2746 --address=0.0.0.0 &
+kubectl port-forward -n db svc/rabbitmq 15672:15672 --address=0.0.0.0 &
+kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80 --address=0.0.0.0 &
+kubectl port-forward -n cattle-system svc/rancher 8443:443 --address=0.0.0.0 &
+```
+
+> [!NOTE]
+> Harbor via port-forward will load the UI but **not** accept `docker push`, because `externalURL` is set to `https://<REGISTRY_DOMAIN>`. Pushing requires the real domain.
+
+> [!CAUTION]
+> Every password in the table above is committed in the repo — `harbor-values.yaml`, `rabbitmq-values.yaml`, `prometheus-stack-values.yaml`, `rancher-values.yaml` — and `rotate-service-passwords.sh` deliberately keeps the Harbor admin, `rabbit-admin`, Rancher and Grafana admin accounts unchanged. Change all four by hand after the first login.
+
+### 9.4 Common Troubleshooting
 
 #### Pod stuck in `Pending`
 
@@ -690,6 +784,115 @@ sudo mount -t nfs MASTER_INTERNAL_IP:/srv/nfs/share /mnt
 ls /mnt
 sudo umount /mnt
 ```
+
+#### Certificate stuck at `READY=False`
+
+```bash
+kubectl describe certificate -n <namespace> <name>
+kubectl get order,challenge -A          # ACME progress
+kubectl logs -n cert-manager deploy/cert-manager
+
+# Common causes:
+# 1. DNS not pointing at the master yet → the HTTP-01 challenge cannot be reached
+# 2. Port 80 blocked → HTTP-01 needs it open, not just 443
+# 3. Rate limited by Let's Encrypt (see the warning below)
+```
+
+> [!WARNING]
+> The ClusterIssuer is named `letsencrypt-dev` but points at the **production** ACME endpoint (`acme-v02.api.letsencrypt.org`), so real rate limits apply — 50 certificates per registered domain per week, and 5 duplicates of the same set. Repeatedly reinstalling while DNS is still wrong can lock you out for a week. While testing, switch `spec.acme.server` in [cluster-issuer.yaml](FCTF-k3s-manifest/prod/cert-manager/cluster-issuer.yaml) to `https://acme-staging-v02.api.letsencrypt.org/directory` (the certificate will not be browser-trusted, but issuance is unlimited). Also change `spec.acme.email` — it is committed as a developer's address, so expiry notices go to them.
+
+#### Challenge pods fail to start (gVisor)
+
+Challenge pods run under the `runsc` RuntimeClass, which only exists if gVisor was installed on the node running them (`setup-worker.sh` does this by default).
+
+```bash
+# From the master
+kubectl get runtimeclass
+kubectl describe pod -n <namespace> <challenge-pod>
+
+# On the worker
+runsc --version
+sudo grep -A3 runsc /var/lib/rancher/k3s/agent/etc/containerd/config.toml
+
+# "runsc: executable file not found" → gVisor is missing on that node.
+# Re-run setup-worker.sh with --install-gvisor true
+```
+
+#### Argo workflow fails (challenge deploy/start)
+
+```bash
+kubectl get wf -n argo
+kubectl describe wf -n argo <workflow-name>
+kubectl logs -n argo <workflow-pod> --all-containers
+
+# Common causes:
+# 1. Push denied → docker-registry-creds is missing or the robot lacks Push (section 7.3)
+# 2. NFS PVC not bound → check the workflow PVs
+# 3. RabbitMQ message never consumed → check deployment-consumer logs
+```
+
+#### Argo UI returns 503
+
+The Argo ingress enables nginx basic-auth against a secret named `argo-basic-auth` in namespace `argo` — and **no script in this repo creates it**, so the UI stays broken until you do it once by hand:
+
+```bash
+sudo apt install -y apache2-utils
+htpasswd -cB auth <username>
+kubectl create secret generic argo-basic-auth --from-file=auth -n argo
+rm auth
+```
+
+Past basic-auth, the UI still asks for a bearer token because argo-server runs in `client` auth mode:
+
+```bash
+./manage.sh
+# Choose: 6) Get Argo token  → paste the whole "Bearer ..." string into the UI
+```
+
+#### A console does not load (502 / 503 / cert warning)
+
+```bash
+# Shared causes — check these first for any of the five consoles
+kubectl get ingress -A                  # is the host right? did manage.sh → 9 substitute it?
+kubectl get certificates -A             # READY=False → see the certificate section above
+kubectl get endpoints -n <namespace> <service>   # empty = no healthy backend pod
+```
+
+Per-console specifics:
+
+```bash
+# Harbor — push fails even though the UI works
+#   → externalURL in harbor-values.yaml must equal the real REGISTRY_DOMAIN
+# RabbitMQ — login rejected after step 12 (password rotation)
+kubectl get secret -n db rabbitmq -o jsonpath='{.data.rabbitmq-password}' | base64 -d
+# Grafana / Rancher — the service name must match the Helm release name
+kubectl get svc -n monitoring prometheus-grafana
+kubectl get svc -n cattle-system rancher
+# Rancher redirect loop → the Rancher chart creates its own ingress for the same host
+# as rancher-ingress.yaml; check for a duplicate and delete one
+kubectl get ingress -n cattle-system
+# Grafana loads but shows no data → check the datasources
+kubectl logs -n monitoring deploy/prometheus-grafana -c grafana
+```
+
+### 9.5 End-to-end smoke test
+
+Infrastructure being healthy does not prove the platform works. Verify the core feature explicitly:
+
+```bash
+# 1. Log into the admin panel (ADMIN_DOMAIN) and create + start a challenge
+# 2. Watch the workflow that gets triggered
+kubectl get wf -n argo -w
+
+# 3. The challenge pod should appear and become Running
+kubectl get pods -A -w
+
+# 4. Log into the contestant portal (CONTESTANT_DOMAIN) and connect to the
+#    challenge through GATEWAY_DOMAIN, then submit the flag
+```
+
+> [!NOTE]
+> `./manage.sh → 6` (Get Argo token) prints a short-lived (1h) bearer token for calling the Argo API by hand while debugging. It is not a required setup step — the services read their own projected ServiceAccount token at runtime.
 
 ---
 
@@ -818,7 +1021,9 @@ graph TD
 - [ ] SSH into Worker → Clone repo
 - [ ] `./manage.sh → 2` (Join cluster)
 - [ ] Back to Master → `./manage.sh → 3` (Install FCTF)
-- [ ] `./manage.sh → 4` (Setup Harbor)
 - [ ] Configure DNS records
+- [ ] Harbor UI: create the private project `fctf` + a robot account with pull/push
+- [ ] `./manage.sh → 4` (Setup Harbor)
+- [ ] `./manage.sh → 5` (Setup CI/CD) + add the GitHub secrets
 - [ ] Verify all pods are Running
 - [ ] Test web access
