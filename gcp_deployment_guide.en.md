@@ -941,6 +941,47 @@ gcloud compute instances start fctf-master fctf-worker --zone=asia-southeast1-b
 
 ## 11. Cleanup / Deleting Resources
 
+Two separate layers: the platform inside the VMs, then the GCP infrastructure itself. If you are throwing the VMs away anyway, 11.1 is optional — but run it if you want to reuse the VMs, or if you need the platform gone while keeping the infrastructure.
+
+### 11.1 Uninstall the FCTF platform
+
+```bash
+# On the WORKER first
+./manage.sh
+# Choose: 8) Uninstall → 1) Uninstall worker
+
+# Then on the MASTER
+./manage.sh
+# Choose: 8) Uninstall → 2) Uninstall master
+```
+
+Order matters: removing the master first leaves the worker orphaned with no API server to deregister from.
+
+| Script | What it removes |
+|---|---|
+| `uninstall-worker.sh` | Stops/disables `k3s-agent`, removes all CRI containers, unmounts kubelet/rancher mounts, runs `k3s-agent-uninstall.sh`, deletes `/var/lib/rancher`, `/var/lib/kubelet`, `/etc/cni`, containerd data, gVisor, and the Calico/K3s virtual interfaces |
+| `uninstall.sh` (master) | `helm uninstall` for all 11 releases → force-deletes PVs (patches finalizers) → `clean-nfs.sh` → purges NFS packages → stops K3s → prunes and **uninstalls Docker incl. `/var/lib/docker`** → removes gVisor → runs `k3s-uninstall.sh` → deletes `/etc/rancher`, `/var/lib/rancher`, `/var/lib/kubelet`, `/var/lib/cni`, `/opt/cni`, `/var/lib/containerd`, `~/.kube` |
+
+> [!CAUTION]
+> The master script is a **full node teardown, not an app-level uninstall.** It destroys the cluster and all data:
+> - `clean-nfs.sh` runs `rm -rf /srv/nfs/share` — every uploaded challenge file and app volume. It does back up `/etc/exports` first, and only removes its own export line.
+> - Harbor's PVCs (~114Gi of pushed images) go with the force-deleted PVs, and `/var/lib/docker` takes the local build cache with it.
+> - There is **no** app-only uninstall script in the repo. To reset just the platform and keep the cluster, delete the app namespaces and re-run `./manage.sh → 3` instead — verify your PVs' reclaim policy first, since NFS data is reused.
+>
+> Back up anything you need before running it (see the disk snapshot command in 11.2).
+
+> [!NOTE]
+> Both scripts are best-effort by design: they ignore individual command failures and print `[WARN]`, so a clean exit does not prove everything was removed. The master script skips namespace deletion entirely (that block is commented out), which is harmless once K3s is gone. Verify with:
+> ```bash
+> systemctl status k3s k3s-agent   # both should be gone
+> ls /srv/nfs/share                # should not exist
+> ls /var/lib/rancher /etc/rancher # should not exist
+> ```
+
+`uninstall.sh` accepts `--yes` to skip the confirmation prompt (it otherwise prints the current kube-context and asks).
+
+### 11.2 Delete the GCP infrastructure
+
 When you no longer need it, **DELETE EVERYTHING** to avoid charges:
 
 ```powershell
